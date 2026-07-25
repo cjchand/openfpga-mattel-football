@@ -9,13 +9,16 @@ VFLAGS    := -Wall --cc --exe --build -j 0
 # One entry per testbench: <name> builds sim/<name>_tb.cpp against src/<name>.v
 SIM_TESTS := blink
 
-.PHONY: sim clean
-sim: $(SIM_TESTS:%=sim-%)
+.PHONY: sim clean sim-python
+sim: $(SIM_TESTS:%=sim-%) sim-python
 
 sim-%:
 	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_$* --top-module $* \
 		-o $*_tb sim/$*_tb.cpp src/$*.v
 	sim/obj_dir_$*/$*_tb
+
+sim-python:
+	python3 sim/test_reverse_rbf.py
 
 clean:
 	rm -rf sim/obj_dir_*
