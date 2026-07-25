@@ -78,10 +78,9 @@ module b6100_cpu (
     // combinational RAM read at the address settled last instruction
     wire [3:0] ram_rdata = ram[ram_addr];
 
-    // signals reserved for later tasks (Task 2 uses ram_rdata/sum5/tdin_idx,
-    // Task 4 uses str_full, Task 5 uses din/kb/prev_op) — silence -Wall
+    // signals reserved for later tasks (Task 4 uses str_full, Task 5 uses din/kb) — silence -Wall
     // UNUSEDSIGNAL until then; delete alongside their consumers.
-    wire _unused_ok = &{1'b0, din, kb, prev_op, ram_rdata, sum5, tdin_idx, str_full};
+    wire _unused_ok = &{1'b0, din, kb, sum5, tdin_idx, str_full};
 
     // per-instruction temporaries (blocking-assigned inside the clocked
     // block, committed at the end; lint_off because this mirrors MAME's
@@ -135,7 +134,82 @@ module b6100_cpu (
                     8'h01: skip_v = c;                        // TC
                     8'h4?: a_v = ~op_v[3:0];                  // LAX (op_lax)
                     8'b0111_10??: a_v = a ^ 4'hf;             // COMP (op_comp)
-                    // TASK2-DECODE
+                    // RAM addressing (b5000op.cpp)
+                    8'b0010_00??: begin                       // LB 7,y (op_lb)
+                        if (!op_is_lb(prev_op) && !op_is_atb(prev_op)) begin
+                            bl_v = 4'd7;  bu_v = op_v[1:0];
+                            bu_delay_v = (op_v[1:0] != 2'd0) != (bu != 2'd0);
+                        end
+                    end
+                    8'b0010_01??: begin                       // LB 10,y
+                        if (!op_is_lb(prev_op) && !op_is_atb(prev_op)) begin
+                            bl_v = 4'd10; bu_v = op_v[1:0];
+                            bu_delay_v = (op_v[1:0] != 2'd0) != (bu != 2'd0);
+                        end
+                    end
+                    8'b0010_10??: begin                       // LB 9,y
+                        if (!op_is_lb(prev_op) && !op_is_atb(prev_op)) begin
+                            bl_v = 4'd9;  bu_v = op_v[1:0];
+                            bu_delay_v = (op_v[1:0] != 2'd0) != (bu != 2'd0);
+                        end
+                    end
+                    8'b0010_11??: begin                       // LB 8,y
+                        if (!op_is_lb(prev_op) && !op_is_atb(prev_op)) begin
+                            bl_v = 4'd8;  bu_v = op_v[1:0];
+                            bu_delay_v = (op_v[1:0] != 2'd0) != (bu != 2'd0);
+                        end
+                    end
+                    8'b0011_11??: begin                       // LB 0,y
+                        if (!op_is_lb(prev_op) && !op_is_atb(prev_op)) begin
+                            bl_v = 4'd0;  bu_v = op_v[1:0];
+                            bu_delay_v = (op_v[1:0] != 2'd0) != (bu != 2'd0);
+                        end
+                    end
+                    8'b0001_11??: begin                       // LB 11,y (b6100)
+                        if (!op_is_lb(prev_op) && !op_is_atb(prev_op)) begin
+                            bl_v = 4'd11; bu_v = op_v[1:0];
+                            bu_delay_v = (op_v[1:0] != 2'd0) != (bu != 2'd0);
+                        end
+                    end
+                    8'h77: begin                              // ATB (b6000 op_atb)
+                        if (!op_is_lb(prev_op) && !op_is_atb(prev_op)) begin
+                            bl_v = a; bl_delay_v = 1'b1;
+                        end
+                    end
+                    8'b0101_00??: begin                       // LDA x (op_lda)
+                        a_v = ram_rdata;
+                        bu_v = op_v[1:0] ^ bu;
+                        bu_delay_v = (bu_v != 2'd0) != (bu != 2'd0);
+                    end
+                    8'b0101_10??: begin                       // EXC x,0 (op_exc0)
+                        a_v = ram_rdata; ram_we = 1'b1; ram_wdata = a;
+                        bu_v = op_v[1:0] ^ bu;
+                        bu_delay_v = (bu_v != 2'd0) != (bu != 2'd0);
+                    end
+                    8'b0101_01??: begin                       // EXC x,+1 (op_excp)
+                        a_v = ram_rdata; ram_we = 1'b1; ram_wdata = a;
+                        bu_v = op_v[1:0] ^ bu;
+                        bu_delay_v = (bu_v != 2'd0) != (bu != 2'd0);
+                        bl_v = bl + 4'd1; skip_v = (bl_v[2:0] == 3'd0);
+                        bl_delay_v = 1'b1;
+                    end
+                    8'b0101_11??: begin                       // EXC x,-1 (op_excm)
+                        a_v = ram_rdata; ram_we = 1'b1; ram_wdata = a;
+                        bu_v = op_v[1:0] ^ bu;
+                        bu_delay_v = (bu_v != 2'd0) != (bu != 2'd0);
+                        bl_v = bl - 4'd1; skip_v = (bl_v == 4'hf);
+                        bl_delay_v = 1'b1;
+                    end
+                    8'b0001_00??: begin                       // SM x (op_sm)
+                        ram_we = 1'b1;
+                        ram_wdata = ram_rdata | (4'd1 << op_v[1:0]);
+                    end
+                    8'b0001_01??: begin                       // RSM x (op_rsm)
+                        ram_we = 1'b1;
+                        ram_wdata = ram_rdata & ~(4'd1 << op_v[1:0]);
+                    end
+                    8'b0000_10??: skip_v = !ram_rdata[op_v[1:0]]; // TM x (op_tm)
+                    8'b0111_11??: skip_v = (a == ram_rdata);      // TAM (op_tam)
                     // TASK3-DECODE
                     // TASK4-DECODE
                     // TASK5-DECODE

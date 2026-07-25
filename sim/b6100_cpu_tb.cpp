@@ -102,12 +102,90 @@ static void test_illegal_is_nop() {
     CHECK(c.d.dbg_illegal == 1, "illegal flag latched for smoke tests");
 }
 
+// --- Task 2 tests ---------------------------------------------------------
+
+static void test_lb_and_ram_rw() {
+    Cpu c;
+    // LB 0,bank1 (0x3d: bl=0, bu=1); LAX 2 (A=0xD); EXC 0,0 (0x58: swap A/RAM)
+    // then LDA 0 (0x50) reloads it
+    c.place({0x3d, 0x42, 0x58, 0x50});
+    c.reset(); c.steps(4);
+    CHECK(c.d.dbg_a == 0xD, "EXC wrote A to RAM[0x10], LDA read it back");
+    CHECK(c.d.dbg_b == 0x10, "B = {BU=1, BL=0}");
+}
+
+static void test_lb_successive_ignored() {
+    Cpu c;
+    // LB 7,0 (0x20) then LB 0,3 (0x3f): second LB must be ignored (op_lb quirk)
+    c.place({0x20, 0x3f});
+    c.reset(); c.steps(2);
+    CHECK(c.d.dbg_bl == 7 && c.d.dbg_bu == 0, "successive LB ignored");
+}
+
+static void test_atb_and_delay() {
+    Cpu c;
+    // LAX 12 (0x43 -> A=0xC); NOP; ATB (0x77): BL=A with 1-instr ram_addr delay
+    c.place({0x43, 0x00, 0x77, 0x00});
+    c.reset(); c.steps(3);
+    CHECK(c.d.dbg_bl == 0xC, "ATB loaded BL from A");
+    CHECK(c.d.dbg_b == 0x00, "ram_addr still old BL right after ATB (bl_delay)");
+    c.step();
+    CHECK(c.d.dbg_b == 0x0C, "ram_addr caught up next instruction");
+}
+
+static void test_excp_excm_skip() {
+    Cpu c;
+    // LB 7,0 (0x20 -> BL=7); EXC 0,+1 (0x54): BL 7->8, (8&7)==0 -> skip next
+    c.place({0x20, 0x54, 0x43, 0x00});   // LAX 12 must be skipped
+    c.reset(); c.steps(3);
+    CHECK(c.d.dbg_bl == 8, "EXCP incremented BL");
+    CHECK(c.d.dbg_a == 0, "next op skipped (A unchanged)");
+    Cpu m;
+    // LB 0,0 (0x3c -> BL=0); EXC 0,-1 (0x5c): BL 0->0xF -> skip next
+    m.place({0x3c, 0x5c, 0x43, 0x00});
+    m.reset(); m.steps(3);
+    CHECK(m.d.dbg_bl == 0xF, "EXCM decremented BL with wrap");
+    CHECK(m.d.dbg_a == 0, "next op skipped after EXCM overflow");
+}
+
+static void test_sm_rsm_tm_tam() {
+    Cpu c;
+    // LB 0,0; SM 2 (0x12); TM 2 (0x0a): bit set -> no skip; LAX 1 executes;
+    // RSM 2 (0x16); TM 2 (0x0a): bit clear -> skip; LAX 2 skipped
+    c.place({0x3c, 0x12, 0x0a, 0x4e, 0x16, 0x0a, 0x4d, 0x00});
+    c.reset(); c.steps(4);
+    CHECK(c.d.dbg_a == 0x1, "TM on set bit did not skip (LAX 1 ran)");
+    c.steps(4);
+    CHECK(c.d.dbg_a == 0x1, "TM on clear bit skipped LAX 2");
+    Cpu t;
+    // LB 0,0; LAX 15 -> A=0; TAM (0x7c): RAM[0]==0==A -> skip next LAX
+    t.place({0x3c, 0x4f, 0x7c, 0x45, 0x00});
+    t.reset(); t.steps(4);
+    CHECK(t.d.dbg_a == 0x0, "TAM equal skipped following LAX");
+}
+
+static void test_lda_bu_xor() {
+    Cpu c;
+    // LB 0,bank1 (0x3d); LDA 1 (0x51): A=RAM, BU ^= 1 -> BU=0
+    c.place({0x3d, 0x51, 0x00});
+    c.reset(); c.steps(2);
+    CHECK(c.d.dbg_bu == 0, "LDA XORed BU");
+    c.step();
+    CHECK(c.d.dbg_b == 0x00, "BU change applies (delay covers only 0<->nonzero edge timing)");
+}
+
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
     run_test("reset_state", test_reset_state);
     run_test("lfsr_sequence", test_lfsr_sequence);
     run_test("lax_comp", test_lax_comp);
     run_test("illegal_is_nop", test_illegal_is_nop);
+    run_test("lb_and_ram_rw", test_lb_and_ram_rw);
+    run_test("lb_successive_ignored", test_lb_successive_ignored);
+    run_test("atb_and_delay", test_atb_and_delay);
+    run_test("excp_excm_skip", test_excp_excm_skip);
+    run_test("sm_rsm_tm_tam", test_sm_rsm_tm_tam);
+    run_test("lda_bu_xor", test_lda_bu_xor);
     if (g_failures) { std::printf("FAILED: %d check(s)\n", g_failures); return 1; }
     std::printf("PASS: b6100_tb\n");
     return 0;
