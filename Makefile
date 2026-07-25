@@ -19,6 +19,7 @@ sim-%:
 
 sim-python:
 	python3 sim/test_reverse_rbf.py
+	python3 sim/test_trace_diff.py
 
 clean:
 	rm -rf sim/obj_dir_*
@@ -85,5 +86,5 @@ golden: tracegen
 	  $(MAME) mfootb -debug -debugscript tools/golden/trace.debugscript \
 	  -autoboot_script tools/golden/hold_input.lua \
 	  -video none -sound none -nothrottle -seconds_to_run 45; \
-	sim/obj_dir_trace/b6100_trace $(ROM) $(GOLDEN_N) $$KB $$DIN ours.csv $(GOLDEN_SETTLE); \
-	python3 tools/golden/trace_diff.py golden.tr ours.csv
+	sim/obj_dir_trace/b6100_trace $(ROM) $(GOLDEN_N) $$KB $$DIN ours.csv $(GOLDEN_SETTLE) && \
+	python3 tools/golden/trace_diff.py golden.tr ours.csv --min $$(( $(GOLDEN_N) / 2 ))

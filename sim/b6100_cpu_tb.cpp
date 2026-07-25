@@ -305,6 +305,21 @@ static void test_kseg_tkbs_atbz() {
     CHECK(c.d.str == (1 << 7), "ATBZ strobed 1<<A");
 }
 
+static void test_unmapped_ram_columns() {
+    Cpu c;
+    // MAME's B6100 only backs RAM columns x0-xB (b6100.cpp data_48x4);
+    // columns C-F must read 0 and drop writes.
+    // LAX imm0 (0x40 -> A=~0=0xF); ATB (0x77 -> BL=A=0xF, 1-instr addr delay);
+    // NOP (lets ram_addr catch up to column 0xF); EXC 0,0 (0x58: writes old
+    // A=0xF to RAM[0x0F], reloads A from RAM[0x0F]); LDA 0 (0x50: rereads
+    // RAM[0x0F] into A). If column F were mapped (pre-fix bug), the EXC0
+    // write would land and LDA would read back 0xF; with the fix, the read
+    // is forced to 0 and the write is dropped, so A stays 0.
+    c.place({0x40, 0x77, 0x00, 0x58, 0x50, 0x00});
+    c.reset(); c.steps(5);
+    CHECK(c.d.dbg_a == 0, "column 0xF is unmapped: EXC0 write dropped, LDA reads 0");
+}
+
 static void test_spk_follows_carry() {
     Cpu c;
     c.place({0x0c, 0x00, 0x0d, 0x00});  // SC, NOP, RSC, NOP
@@ -336,6 +351,7 @@ int main(int argc, char** argv) {
     run_test("tkb_and_read", test_tkb_and_read);
     run_test("tdin_mapping", test_tdin_mapping);
     run_test("kseg_tkbs_atbz", test_kseg_tkbs_atbz);
+    run_test("unmapped_ram_columns", test_unmapped_ram_columns);
     run_test("spk_follows_carry", test_spk_follows_carry);
     if (g_failures) { std::printf("FAILED: %d check(s)\n", g_failures); return 1; }
     std::printf("PASS: b6100_tb\n");

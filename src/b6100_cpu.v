@@ -75,8 +75,10 @@ module b6100_cpu (
         endcase
     endfunction
 
-    // combinational RAM read at the address settled last instruction
-    wire [3:0] ram_rdata = ram[ram_addr];
+    // combinational RAM read at the address settled last instruction.
+    // MAME's B6100 (data_48x4, see b6100.cpp) only backs columns x0-xB;
+    // columns C-F have no storage and always read 0.
+    wire [3:0] ram_rdata = (ram_addr[3:0] > 4'hB) ? 4'd0 : ram[ram_addr];
 
     // per-instruction temporaries (blocking-assigned inside the clocked
     // block, committed at the end; lint_off because this mirrors MAME's
@@ -245,6 +247,10 @@ module b6100_cpu (
                     8'h74: seg_v = 10'd0;                     // KSEG (op_kseg)
                     8'h76: begin                              // ATBZ (b6000)
                         seg_v = 10'd0;
+                        // 16-bit shift truncated to 9 (str_v = str_full[8:0]):
+                        // intentional, effect-equivalent to MAME -- no strobe
+                        // exists above STR8, so bits above [8] are discarded
+                        // either way. Do not "fix" this to a 9-bit shift.
                         str_full = 16'h0001 << a;
                         str_v = str_full[8:0];
                     end
@@ -290,7 +296,10 @@ module b6100_cpu (
             seg <= seg_v; str <= str_v;
             spk <= c_v;   // b6100: SPK follows carry (change-driven in MAME,
                           // equivalent since SPK only updates when C changes)
-            if (!skip_taken && ram_we) ram[ram_addr] <= ram_wdata;
+            // columns C-F are unmapped on real silicon (see ram_rdata above);
+            // writes there are dropped, matching MAME's 48x4 storage.
+            if (!skip_taken && ram_we && ram_addr[3:0] <= 4'hB)
+                ram[ram_addr] <= ram_wdata;
             if (illegal_v && !skip_taken) dbg_illegal <= 1'b1;
         end
     end
