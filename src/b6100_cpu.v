@@ -78,10 +78,6 @@ module b6100_cpu (
     // combinational RAM read at the address settled last instruction
     wire [3:0] ram_rdata = ram[ram_addr];
 
-    // signals reserved for later tasks (Task 4 uses str_full, Task 5 uses din) — silence -Wall
-    // UNUSEDSIGNAL until then; delete alongside their consumers.
-    wire _unused_ok = &{1'b0, din, tdin_idx, str_full};
-
     // per-instruction temporaries (blocking-assigned inside the clocked
     // block, committed at the end; lint_off because this mirrors MAME's
     // strictly ordered execute loop)
@@ -102,7 +98,9 @@ module b6100_cpu (
     reg       illegal_v;
     reg [1:0] tdin_idx;
     reg [5:0] ram_addr_v;
+    /* verilator lint_off UNUSEDSIGNAL */
     reg [15:0] str_full;
+    /* verilator lint_on UNUSEDSIGNAL */
     integer i;
 
     always @(posedge clk) begin
@@ -241,7 +239,19 @@ module b6100_cpu (
                     end
                     8'b0001_10??: ret_v = 2'd1;               // RET (op_ret_step)
                     8'b1???_????: tra_v = 2'd1;               // TRA (op_tra_step)
-                    // TASK5-DECODE
+                    // I/O (b5000op.cpp + b6000/b6100 overrides)
+                    8'h02: skip_v = (kb != 4'd0);             // TKB (op_tkb)
+                    8'h03: seg_v = seg | seg_decode(ram_rdata); // TKBS (b6100)
+                    8'h74: seg_v = 10'd0;                     // KSEG (op_kseg)
+                    8'h76: begin                              // ATBZ (b6000)
+                        seg_v = 10'd0;
+                        str_full = 16'h0001 << a;
+                        str_v = str_full[8:0];
+                    end
+                    8'b0000_01??: begin                       // TDIN x (op_tdin)
+                        tdin_idx = op_v[1:0] + 2'd3;          // (op-1)&3
+                        skip_v = din[tdin_idx];
+                    end
                     default: illegal_v = 1'b1;                // op_illegal -> nop
                 endcase
             end

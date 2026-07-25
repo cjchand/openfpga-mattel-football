@@ -263,6 +263,58 @@ static void test_long_jump_tl_tra() {
     CHECK(c.d.dbg_pc == 0x0d1, "TL+TRA long jump landed on page 3, PL 0x11");
 }
 
+// --- Task 5 tests ---------------------------------------------------------
+
+static void test_tkb_and_read() {
+    Cpu c;
+    c.place({0x02, 0x4e, 0x00});      // TKB: kb!=0 -> skip LAX 1
+    c.reset(); c.d.kb = 0x2;
+    c.steps(2);
+    CHECK(c.d.dbg_a == 0, "TKB skipped on pressed button");
+    Cpu r;
+    r.place({0x4f, 0x6f, 0x00});      // LAX 15 (A=0); READ: A += KB (b6100!)
+    r.reset(); r.d.kb = 0x9;
+    r.steps(2);
+    CHECK(r.d.dbg_a == 0x9, "READ adds KB directly (not complemented)");
+}
+
+static void test_tdin_mapping() {
+    // TDIN ops 0x04..0x07 test DIN bits (op-1)&3 = 3,0,1,2 (op_tdin)
+    Cpu c;
+    c.place({0x05, 0x4e, 0x00});      // op 0x05 -> DIN bit0 (difficulty, =1)
+    c.reset();                         // reset() sets din=1
+    c.steps(2);
+    CHECK(c.d.dbg_a == 0, "TDIN on high DIN bit skipped next");
+    Cpu d;
+    d.place({0x04, 0x4e, 0x00});      // op 0x04 -> DIN bit3 (=0 at idle)
+    d.reset();
+    d.steps(2);
+    CHECK(d.d.dbg_a == 0x1, "TDIN on low DIN bit did not skip");
+}
+
+static void test_kseg_tkbs_atbz() {
+    Cpu c;
+    // LB 0,0; LAX 8 (0x48 -> A=~8=7); EXC0 (RAM[0]=7, A=0);
+    // TKBS (0x03): seg |= decode(7)=0x007; LAX 8 again (A=7);
+    // ATBZ (0x76): kseg + str=1<<A
+    c.place({0x3c, 0x48, 0x58, 0x03, 0x48, 0x76, 0x00});
+    c.reset(); c.steps(4);
+    CHECK(c.d.seg == 0x007, "TKBS ORed decoded RAM digit into SEG");
+    c.steps(2);
+    CHECK(c.d.seg == 0, "ATBZ cleared segments (kseg)");
+    CHECK(c.d.str == (1 << 7), "ATBZ strobed 1<<A");
+}
+
+static void test_spk_follows_carry() {
+    Cpu c;
+    c.place({0x0c, 0x00, 0x0d, 0x00});  // SC, NOP, RSC, NOP
+    c.reset();
+    c.step();
+    CHECK(c.d.spk == 1, "SPK high after SC");
+    c.steps(2);
+    CHECK(c.d.spk == 0, "SPK low after RSC");
+}
+
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
     run_test("reset_state", test_reset_state);
@@ -281,6 +333,10 @@ int main(int argc, char** argv) {
     run_test("tl_sets_pu_and_s", test_tl_sets_pu_and_s);
     run_test("tra_call_and_ret", test_tra_call_and_ret);
     run_test("long_jump_tl_tra", test_long_jump_tl_tra);
+    run_test("tkb_and_read", test_tkb_and_read);
+    run_test("tdin_mapping", test_tdin_mapping);
+    run_test("kseg_tkbs_atbz", test_kseg_tkbs_atbz);
+    run_test("spk_follows_carry", test_spk_follows_carry);
     if (g_failures) { std::printf("FAILED: %d check(s)\n", g_failures); return 1; }
     std::printf("PASS: b6100_tb\n");
     return 0;
