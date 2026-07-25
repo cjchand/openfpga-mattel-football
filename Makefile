@@ -7,7 +7,7 @@ VERILATOR ?= verilator
 VFLAGS    := -Wall --cc --exe --build -j 0
 
 # One entry per testbench: <name> builds sim/<name>_tb.cpp against src/<name>.v
-SIM_TESTS := blink
+SIM_TESTS := b6100_cpu
 
 .PHONY: sim clean sim-python
 sim: $(SIM_TESTS:%=sim-%) sim-python

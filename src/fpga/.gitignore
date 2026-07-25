@@ -16,6 +16,7 @@ cr_ie_info.json
 *.rpt
 *.smsg
 *.sof
+*.jdi
 *.sopc_builder
 *.summary
 *.txt
