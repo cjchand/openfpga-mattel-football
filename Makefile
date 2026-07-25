@@ -19,3 +19,12 @@ sim-%:
 
 clean:
 	rm -rf sim/obj_dir_*
+
+QUARTUS_IMAGE ?= didiermalenfant/quartus:22.1-apple-silicon
+QPF           ?= ap_core.qpf
+
+.PHONY: bitstream
+bitstream:
+	docker run --platform linux/amd64 --rm -t \
+		-v $(PWD)/src/fpga:/build -w /build \
+		$(QUARTUS_IMAGE) quartus_sh --flow compile $(QPF)
