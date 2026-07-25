@@ -233,14 +233,38 @@ module b6100_cpu (
                         if (op_v[0]) skip_v = !sum5[4];
                         a_v = sum5[3:0];
                     end
-                    // TASK4-DECODE
+                    // control flow (b5000op.cpp, b6100 opcode positions)
+                    8'b0011_0???,
+                    8'b0011_10??: begin                       // TL z (op_tl)
+                        pc_v = {op_v[3:0], pc_v[5:0]};
+                        s_v  = {pc_v[9:6], s_v[5:0]};         // S upper rides PU
+                    end
+                    8'b0001_10??: ret_v = 2'd1;               // RET (op_ret_step)
+                    8'b1???_????: tra_v = 2'd1;               // TRA (op_tra_step)
                     // TASK5-DECODE
                     default: illegal_v = 1'b1;                // op_illegal -> nop
                 endcase
             end
 
             // ---- multi-step continuations (run even on skipped slots) ----
-            // TASK4-STEPS
+            // TRA/RET step machines (op_tra_step / op_ret_step): step 1 arms
+            // the skip; step 2 runs after the (usually skipped) next opcode.
+            if (tra_v == 2'd1 && !skip_taken && op_v[7]) begin
+                skip_v = 1'b1; tra_v = 2'd2;
+            end else if (tra_v == 2'd2) begin
+                if (!sr_v && !prev_op[6]) begin               // call: push return
+                    sr_v = 1'b1;
+                    s_v  = {s_v[9:6], pc[5:0]};               // slot addr low6
+                end
+                if (sr_v) pc_v = {4'd15 ^ {3'b000, prev_op[6]}, pc_v[5:0]};
+                pc_v = {pc_v[9:6], prev_op[5:0]};             // PL from TRA op
+                tra_v = 2'd0;
+            end
+            if (ret_v == 2'd1 && !skip_taken && (op_v & 8'hfc) == 8'h18) begin
+                skip_v = 1'b1; ret_v = 2'd2;
+            end else if (ret_v == 2'd2) begin
+                pc_v = s_v; sr_v = 1'b0; ret_v = 2'd0;
+            end
 
             // ---- ram_addr update with 1-instruction delays ----
             ram_addr_v = {bu_v, bl_v};

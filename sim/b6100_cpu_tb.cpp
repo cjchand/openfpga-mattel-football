@@ -221,6 +221,48 @@ static void test_add_variants() {
     CHECK(n.d.dbg_a == 0x1, "ADD 0x72 did not skip (LAX 1 ran)");
 }
 
+// --- Task 4 tests ---------------------------------------------------------
+
+static void test_tl_sets_pu_and_s() {
+    Cpu c;
+    // TL 2 (0x32) at addr 0: PU=2, PL = lfsr_next(0)=0x20 -> pc=0x0A0
+    c.place({0x32});
+    c.reset(); c.step();
+    CHECK(c.d.dbg_pc == 0x0a0, "TL set PU, PL from incremented pc");
+    CHECK((c.d.dbg_s >> 6) == 2, "TL copied new PU into S upper");
+}
+
+static void test_tra_call_and_ret() {
+    Cpu c;
+    // addr0: TRA call to PL=0x05 (op 0x80|0x05=0x85, bit6 clear -> call)
+    // slot (addr 0x20) skipped; call goes to page 15 (sr_page), PL=0x05
+    c.place({0x85, 0x00});
+    c.rom[0x3c5] = 0x4e;              // page15:0x05 -> LAX 1 (nibble 0xE -> A=~0xE=1)
+    // after LAX at 0x3C5, next fetch = lfsr walk; place RET there
+    c.rom[(0x3c0) | (Cpu::lfsr_next(0x3c5) & 0x3f)] = 0x18;   // RET
+    c.reset();
+    c.step();                          // TRA step1 (skip armed)
+    c.step();                          // slot skipped, step2 jumps
+    CHECK(c.d.dbg_pc == 0x3c5, "call went to subroutine page 15, PL from TRA");
+    CHECK((c.d.dbg_s & 0x3f) == 0x20, "return slot low6 pushed into S");
+    c.step();                          // LAX 1 (opcode nibble 0xE) -> A=0x1
+    CHECK(c.d.dbg_a == 0x1, "subroutine body executed");
+    c.step();                          // RET step1
+    c.step();                          // slot skipped, step2: pc = S
+    CHECK(c.d.dbg_pc == (c.d.dbg_s), "RET returned to S");
+}
+
+static void test_long_jump_tl_tra() {
+    Cpu c;
+    // TRA jump (bit6 set): 0xC0|0x11 -> PL=0x11; slot holds TL 3 (0x33,
+    // unskippable): PU=3 -> final pc = 0x0D1 (SR clear so step2 leaves PU)
+    c.place({0xd1, 0x33});
+    c.reset();
+    c.step();                          // TRA step1
+    c.step();                          // TL executes, then step2 sets PL
+    CHECK(c.d.dbg_pc == 0x0d1, "TL+TRA long jump landed on page 3, PL 0x11");
+}
+
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
     run_test("reset_state", test_reset_state);
@@ -236,6 +278,9 @@ int main(int argc, char** argv) {
     run_test("adx_skip_semantics", test_adx_skip_semantics);
     run_test("sc_rsc_tc", test_sc_rsc_tc);
     run_test("add_variants", test_add_variants);
+    run_test("tl_sets_pu_and_s", test_tl_sets_pu_and_s);
+    run_test("tra_call_and_ret", test_tra_call_and_ret);
+    run_test("long_jump_tl_tra", test_long_jump_tl_tra);
     if (g_failures) { std::printf("FAILED: %d check(s)\n", g_failures); return 1; }
     std::printf("PASS: b6100_tb\n");
     return 0;
