@@ -76,3 +76,15 @@
 
 Do not upgrade Quartus device settings in the .qsf — preconfigured for the
 Pocket's Cyclone V.
+
+## Hardware boot test findings (2026-07-25, firmware 2.5)
+
+- The SD folder under `/Cores/` MUST be named exactly `<author>.<shortname>`
+  from core.json (`Developer.Core Template` for the template). A mismatched
+  folder name produces "Load error in 'core': General Error" + "Error in
+  core setup". Spaces in the folder name are fine.
+- Our Quartus 22.1-built bitstream (786,964 bytes) boots correctly. The
+  upstream prebuilt (787,952 bytes, older Quartus) also boots — RBF size
+  varies across Quartus versions and both are valid.
+- `tools/reverse_rbf.py` validated byte-for-byte against upstream's
+  known-good rbf/rbf_r pair.
