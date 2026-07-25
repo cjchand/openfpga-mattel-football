@@ -8,26 +8,34 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <cerrno>
 #include <string>
 #include <vector>
 #include <sys/stat.h>
 
-static void write_wav(const char* path, const std::vector<uint8_t>& samples, uint32_t rate) {
+// Returns false if any fwrite/fprintf call failed or the close failed, so a
+// bad outdir can't silently produce an empty capture that still PASSes.
+static bool write_wav(const char* path, const std::vector<uint8_t>& samples, uint32_t rate) {
     FILE* f = std::fopen(path, "wb");
-    if (!f) { std::perror(path); return; }
+    if (!f) { std::perror(path); return false; }
+    bool ok = true;
     uint32_t n = samples.size(), data = n, riff = 36 + data;
     uint16_t ch = 1, bits = 8, align = 1;
     uint32_t brate = rate;
-    std::fwrite("RIFF", 1, 4, f); std::fwrite(&riff, 4, 1, f);
-    std::fwrite("WAVEfmt ", 1, 8, f);
     uint32_t fmtlen = 16; uint16_t pcm = 1;
-    std::fwrite(&fmtlen, 4, 1, f); std::fwrite(&pcm, 2, 1, f);
-    std::fwrite(&ch, 2, 1, f); std::fwrite(&rate, 4, 1, f);
-    std::fwrite(&brate, 4, 1, f); std::fwrite(&align, 2, 1, f);
-    std::fwrite(&bits, 2, 1, f);
-    std::fwrite("data", 1, 4, f); std::fwrite(&data, 4, 1, f);
-    std::fwrite(samples.data(), 1, n, f);
-    std::fclose(f);
+    auto w = [&](const void* p, size_t sz, size_t cnt) {
+        if (std::fwrite(p, sz, cnt, f) != cnt) ok = false;
+    };
+    w("RIFF", 1, 4); w(&riff, 4, 1);
+    w("WAVEfmt ", 1, 8);
+    w(&fmtlen, 4, 1); w(&pcm, 2, 1);
+    w(&ch, 2, 1); w(&rate, 4, 1);
+    w(&brate, 4, 1); w(&align, 2, 1);
+    w(&bits, 2, 1);
+    w("data", 1, 4); w(&data, 4, 1);
+    w(samples.data(), 1, n);
+    if (std::fclose(f) != 0) ok = false;
+    return ok;
 }
 
 int main(int argc, char** argv) {
@@ -58,7 +66,10 @@ int main(int argc, char** argv) {
     if (std::strcmp(mode, "game") == 0) status_mode = false;
     else if (std::strcmp(mode, "status") == 0) status_mode = true;
     else { std::fprintf(stderr, "mode must be 'game' or 'status'\n"); return 2; }
-    mkdir(outdir, 0755);
+    if (mkdir(outdir, 0755) != 0 && errno != EEXIST) {
+        std::fprintf(stderr, "failed to create outdir '%s': %s\n", outdir, std::strerror(errno));
+        return 2;
+    }
 
     Vfootball_system d;
     d.ce = 1; d.kb = 0; d.din = din & 0x1; d.score_btn = 0;
@@ -71,6 +82,9 @@ int main(int argc, char** argv) {
     long tick = 0;
     int frames = 0;
     bool saw_bright_dash = false, saw_dim_dash = false, saw_digit = false;
+    // Column of the bright dash for each post-settle frame (game-mode
+    // movement proof). -1 means no bright dash was found that frame.
+    std::vector<int> dash_cols;
 
     while (frames < n_windows) {
         if (tick == settle) { d.kb = kb; d.din = din; }
@@ -91,32 +105,58 @@ int main(int argc, char** argv) {
                 }
             char path[512];
             std::snprintf(path, sizeof path, "%s/frame_%03d.ppm", outdir, frames);
-            write_ppm(path, 400, 360, buf.data());
-            // classify content by scanning dash and digit pixel centers
+            if (!write_ppm(path, 400, 360, buf.data())) {
+                std::fprintf(stderr, "failed to write frame '%s'\n", path);
+                return 2;
+            }
+            // classify content by scanning dash and digit pixel centers.
+            // Only latch the saw_* invariants (and the movement trace) for
+            // frames captured after the input settle point -- the pre-settle
+            // boot display already lights both brightness classes and would
+            // otherwise make these checks pass regardless of input.
+            bool post_settle = tick >= settle;
+            int frame_bright_col = -1;
             for (int col = 0; col < 9; col++)
                 for (int row = 0; row < 3; row++) {
                     int cy = (row == 0) ? 163 : (row == 1) ? 223 : 283;
                     d.px_x = 30 + 38 * col + 10; d.px_y = cy; d.eval();
-                    if (d.px_rgb == 0xFF2020) saw_bright_dash = true;
-                    if (d.px_rgb == 0x801414) saw_dim_dash = true;
+                    if (post_settle && d.px_rgb == 0xFF2020) {
+                        saw_bright_dash = true;
+                        if (frame_bright_col < 0) frame_bright_col = col;
+                    }
+                    if (post_settle && d.px_rgb == 0x801414) saw_dim_dash = true;
                 }
+            if (post_settle) dash_cols.push_back(frame_bright_col);
             static const int dx[7] = {40, 72, 136, 168, 200, 264, 296};
             for (int dg = 0; dg < 7; dg++) {
                 d.px_x = dx[dg] + 12; d.px_y = 40 + 2; d.eval();  // segment a
-                if (d.px_rgb != 0x1A0505 && d.px_rgb != 0x000000) saw_digit = true;
+                if (post_settle && d.px_rgb != 0x1A0505 && d.px_rgb != 0x000000) saw_digit = true;
             }
             frames++;
         }
     }
 
     std::string wav = std::string(outdir) + "/spk.wav";
-    write_wav(wav.c_str(), spk_samples, 70000);
+    if (!write_wav(wav.c_str(), spk_samples, 70000)) {
+        std::fprintf(stderr, "failed to write '%s'\n", wav.c_str());
+        return 2;
+    }
 
     long spk_toggles = 0;
     for (size_t i = 1; i < spk_samples.size(); i++)
         if (spk_samples[i] != spk_samples[i-1]) spk_toggles++;
-    std::printf("mode=%s frames=%d spk_toggles=%ld bright_dash=%d dim_dash=%d digit=%d\n",
-                mode, frames, spk_toggles, saw_bright_dash, saw_dim_dash, saw_digit);
+
+    // Movement proof: the bright-dash column must change across at least
+    // two post-settle frames when input is actually driving the game. This
+    // is what catches a harness that would otherwise "pass" with kb=0 (no
+    // button held) just because dashes happened to be lit at all.
+    bool dash_moved = false;
+    for (size_t i = 1; i < dash_cols.size(); i++) {
+        if (dash_cols[i] != dash_cols[0]) { dash_moved = true; break; }
+    }
+
+    std::printf("mode=%s frames=%d spk_toggles=%ld bright_dash=%d dim_dash=%d digit=%d dash_moved=%d\n",
+                mode, frames, spk_toggles, saw_bright_dash, saw_dim_dash, saw_digit, dash_moved);
 
     // The dash field (ball-carrier/defenders) and the digit readout (down,
     // field position, yards to go) are mutually-exclusive display modes on
@@ -124,7 +164,9 @@ int main(int argc, char** argv) {
     // dash field for as long as it's held, and the digits never light
     // without it. So each mode asserts only the invariant it can actually
     // produce; the other is still tracked and printed informationally.
-    bool ok = status_mode ? saw_digit : (saw_bright_dash && saw_dim_dash);
+    // dash_moved is only asserted in game mode -- status mode blanks the
+    // dash field by design, so the column trace there is informational.
+    bool ok = status_mode ? saw_digit : (saw_bright_dash && saw_dim_dash && dash_moved);
     if (!ok) {
         std::printf("FAIL: mode=%s did not produce its expected display invariant\n", mode);
         return 1;

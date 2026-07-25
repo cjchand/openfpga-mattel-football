@@ -66,6 +66,16 @@ static void test_decimal_point() {
     r.clear_levels(); r.set_level(2, 7, 2);
     CHECK(r.px(193 + 3, 66 + 3) == GHOST || r.px(193 + 3, 66 + 3) == BG,
           "col2 line7 does not light digit3's dp");
+    // Also scan a region around digit 2's own cell (x0=136, y0=40) for any
+    // stray non-background, non-ghost pixel -- catches a mis-indexed dp
+    // read that renders near digit 2 instead of (or in addition to)
+    // digit 3, which the single dp-pixel check above wouldn't see.
+    for (int y = 40; y < 80; y += 4)
+        for (int x = 136; x < 168; x += 4) {
+            uint32_t p = r.px(x, y);
+            CHECK(p == GHOST || p == BG,
+                  "col2 line7 does not stray-light any pixel near digit2's cell");
+        }
 }
 
 static void test_reference_frame() {
