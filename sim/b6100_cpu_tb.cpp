@@ -174,6 +174,53 @@ static void test_lda_bu_xor() {
     CHECK(c.d.dbg_b == 0x00, "BU change applies (delay covers only 0<->nonzero edge timing)");
 }
 
+// --- Task 3 tests ---------------------------------------------------------
+
+static void test_adx_skip_semantics() {
+    Cpu c;
+    // LAX 15 -> A=0; ADX 12 (0x63): A += ~0x3=0xC -> 0xC, no ovf -> skip next
+    c.place({0x4f, 0x63, 0x41, 0x00});
+    c.reset(); c.steps(3);
+    CHECK(c.d.dbg_a == 0xC, "ADX added ~imm");
+    CHECK(c.d.dbg_a != 0xE, "LAX after non-overflow ADX was skipped");
+    Cpu o;
+    // LAX 10 -> A=5; ADX (0x64): A += ~0x4=0xB -> 0x10 ovf -> A=0, NO skip
+    o.place({0x4a, 0x64, 0x41, 0x00});
+    o.reset(); o.steps(3);
+    CHECK(o.d.dbg_a == 0xE, "overflowing ADX did not skip (LAX 1 ran)");
+}
+
+static void test_sc_rsc_tc() {
+    Cpu c;
+    // SC (0x0c); TC (0x01) -> skip; LAX 1 skipped; RSC (0x0d); TC -> no skip; LAX 2 runs
+    c.place({0x0c, 0x01, 0x4e, 0x0d, 0x01, 0x4d, 0x00});
+    c.reset(); c.steps(3);
+    CHECK(c.d.dbg_c == 1, "SC set carry");
+    CHECK(c.d.dbg_a == 0, "TC-with-carry skipped LAX");
+    c.steps(3);
+    CHECK(c.d.dbg_c == 0, "RSC cleared carry");
+    CHECK(c.d.dbg_a == 0x2, "TC-without-carry did not skip");
+}
+
+static void test_add_variants() {
+    // ADD 0x70..0x73: bit1 clear -> add carry & update C; bit0 set -> skip on no ovf
+    Cpu c;
+    // LB 0,0; LAX 12 (A=3); EXC0 (RAM[0]=3, A=old RAM=0); LAX 5 (A=0xA);
+    // SC; ADD c,s (0x71): A=0xA+3+1=0xE, C=0, no ovf -> skip; LAX 1 skipped
+    c.place({0x3c, 0x4c, 0x58, 0x45, 0x0c, 0x71, 0x4e, 0x00});
+    c.reset(); c.steps(6);
+    CHECK(c.d.dbg_a == 0xE, "ADD included carry");
+    CHECK(c.d.dbg_c == 0, "ADD updated carry from bit4");
+    c.step();
+    CHECK(c.d.dbg_a == 0xE, "ADD skip-on-no-overflow skipped LAX");
+    Cpu n;
+    // Same setup; ADD nc,ns (0x72): no carry-in, C untouched, no skip
+    n.place({0x3c, 0x4c, 0x58, 0x45, 0x0c, 0x72, 0x4e, 0x00});
+    n.reset(); n.steps(7);
+    CHECK(n.d.dbg_c == 1, "ADD 0x72 left carry untouched");
+    CHECK(n.d.dbg_a == 0x1, "ADD 0x72 did not skip (LAX 1 ran)");
+}
+
 int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
     run_test("reset_state", test_reset_state);
@@ -186,6 +233,9 @@ int main(int argc, char** argv) {
     run_test("excp_excm_skip", test_excp_excm_skip);
     run_test("sm_rsm_tm_tam", test_sm_rsm_tm_tam);
     run_test("lda_bu_xor", test_lda_bu_xor);
+    run_test("adx_skip_semantics", test_adx_skip_semantics);
+    run_test("sc_rsc_tc", test_sc_rsc_tc);
+    run_test("add_variants", test_add_variants);
     if (g_failures) { std::printf("FAILED: %d check(s)\n", g_failures); return 1; }
     std::printf("PASS: b6100_tb\n");
     return 0;

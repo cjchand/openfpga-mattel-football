@@ -78,9 +78,9 @@ module b6100_cpu (
     // combinational RAM read at the address settled last instruction
     wire [3:0] ram_rdata = ram[ram_addr];
 
-    // signals reserved for later tasks (Task 4 uses str_full, Task 5 uses din/kb) — silence -Wall
+    // signals reserved for later tasks (Task 4 uses str_full, Task 5 uses din) — silence -Wall
     // UNUSEDSIGNAL until then; delete alongside their consumers.
-    wire _unused_ok = &{1'b0, din, kb, sum5, tdin_idx, str_full};
+    wire _unused_ok = &{1'b0, din, tdin_idx, str_full};
 
     // per-instruction temporaries (blocking-assigned inside the clocked
     // block, committed at the end; lint_off because this mirrors MAME's
@@ -210,7 +210,29 @@ module b6100_cpu (
                     end
                     8'b0000_10??: skip_v = !ram_rdata[op_v[1:0]]; // TM x (op_tm)
                     8'b0111_11??: skip_v = (a == ram_rdata);      // TAM (op_tam)
-                    // TASK3-DECODE
+                    // arithmetic (b5000op.cpp; SC/RSC opcodes moved on b6100)
+                    8'h0c: c_v = 1'b1;                        // SC (b6100)
+                    8'h0d: c_v = 1'b0;                        // RSC (b6100)
+                    8'h6?: begin
+                        if (op_v[3:0] != 4'hf) begin          // ADX x (op_adx)
+                            sum5 = {1'b0, a} + {1'b0, ~op_v[3:0]};
+                            skip_v = !sum5[4];
+                            a_v = sum5[3:0];
+                        end else begin                        // READ (b6100 op_read)
+                            sum5 = {1'b0, a} + {1'b0, kb};
+                            skip_v = !sum5[4];
+                            a_v = sum5[3:0];
+                        end
+                    end
+                    8'b0111_00??: begin                       // ADD (op_add)
+                        sum5 = {1'b0, a} + {1'b0, ram_rdata};
+                        if (!op_v[1]) begin
+                            sum5 = sum5 + {4'd0, c};
+                            c_v = sum5[4];
+                        end
+                        if (op_v[0]) skip_v = !sum5[4];
+                        a_v = sum5[3:0];
+                    end
                     // TASK4-DECODE
                     // TASK5-DECODE
                     default: illegal_v = 1'b1;                // op_illegal -> nop
