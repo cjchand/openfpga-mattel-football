@@ -40,10 +40,39 @@
   - `dist/platforms/_images/ex_platform.bin`
   This is example/placeholder content (an example platform JSON + image, an
   example icon, and an empty assets dir) — Task 4 will replace/extend these
-  with the real Mattel Football core/platform manifests. No `Cores/...` or
-  `Platforms/...` (Pocket Cores-folder-style) subtree exists in the template's
-  `dist/` — it only has `platforms/` (lowercase, singular naming as shown
-  above) plus `assets/` and `icon.bin`.
+  with the real Mattel Football core/platform manifests.
+
+- **Correction (Task 4):** the Task 3 vendor step copied the template's
+  `src/fpga/` and `dist/` but missed that upstream `open-fpga/core-template`
+  keeps its APF core manifests at the **repository root**, not under `dist/`:
+  `core.json`, `video.json`, `audio.json`, `data.json`, `input.json`,
+  `interact.json`, `variants.json`, and `info.txt` all live at the repo root
+  in the upstream clone (verified against `/tmp/core-template`, whose
+  `git rev-parse HEAD` was re-confirmed to still match the vendored commit
+  `da3a021b1eaf742604d86d8dc9b33a6666263e6a` before copying). There is no
+  `Cores/` folder or `core.json` anywhere upstream in `dist/` itself — the
+  `Cores/<Author>.<Shortname>/` staging directory is something the *packager*
+  (this project, at package time) must construct by placing those root-level
+  manifest files alongside the bitstream, not something the template ships
+  pre-built.
+- `dist/Cores/Developer.Core Template/` was created and populated with the
+  eight root-level manifest files above, copied verbatim from
+  `/tmp/core-template`. The upstream example identity (`"author": "Developer"`,
+  `"shortname": "Core Template"`, per its `core.json`) was kept as-is —
+  renaming to a real Mattel Football identity is deliberately deferred to
+  Plan 5 (artwork/settings/release packaging), which is out of scope here.
+  `core.json`'s `"cores"` entry declares `"filename": "bitstream.rbf_r"`, so
+  the reversed bitstream must be staged at
+  `dist/Cores/Developer.Core Template/bitstream.rbf_r` — this is the value
+  `Makefile`'s `RBF_R_DEST` is set to (explicitly, not `find`-derived, since
+  no placeholder `.rbf_r` ships in the template to search for).
+- SD-card mapping for `make package`'s output (per Analogue's Pocket
+  packaging docs): copy `dist/`'s contents onto the SD card root such that
+  `dist/Cores/*` merges into the card's `/Cores/` folder, and
+  `dist/platforms/ex_platform.json` + `dist/platforms/_images/` merge into
+  the card's `/Platforms/` folder (Pocket folder names are capitalized;
+  the vendored `dist/` uses lowercase `platforms/` as its local staging name
+  for that same content — Analogue's SD-card side folder is `Platforms/`).
 
 Do not upgrade Quartus device settings in the .qsf — preconfigured for the
 Pocket's Cyclone V.

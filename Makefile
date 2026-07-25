@@ -28,3 +28,12 @@ bitstream:
 	docker run --platform linux/amd64 --rm -t \
 		-v $(PWD)/src/fpga:/build -w /build \
 		$(QUARTUS_IMAGE) quartus_sh --flow compile $(QPF)
+
+RBF        ?= src/fpga/output_files/ap_core.rbf
+RBF_R_DEST ?= dist/Cores/Developer.Core Template/bitstream.rbf_r
+
+.PHONY: package
+package:
+	python3 tools/reverse_rbf.py "$(RBF)" "$(RBF_R_DEST)"
+	@echo "Staged: $(RBF_R_DEST)"
+	@echo "Copy the contents of dist/ onto the Pocket SD card root."
