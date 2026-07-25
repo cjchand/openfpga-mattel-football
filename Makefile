@@ -1,0 +1,21 @@
+# Mattel Football openFPGA core — build entry points
+# make sim       — build + run all Verilator testbenches (native, fast)
+# make bitstream — compile the Quartus project in Docker (Task 3 adds this)
+# make package   — bit-reverse + stage the bitstream for the Pocket (Task 4)
+
+VERILATOR ?= verilator
+VFLAGS    := -Wall --cc --exe --build -j 0
+
+# One entry per testbench: <name> builds sim/<name>_tb.cpp against src/<name>.v
+SIM_TESTS := blink
+
+.PHONY: sim clean
+sim: $(SIM_TESTS:%=sim-%)
+
+sim-%:
+	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_$* --top-module $* \
+		-o $*_tb sim/$*_tb.cpp src/$*.v
+	sim/obj_dir_$*/$*_tb
+
+clean:
+	rm -rf sim/obj_dir_*
