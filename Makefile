@@ -40,3 +40,14 @@ package:
 	python3 tools/reverse_rbf.py "$(RBF)" "$(RBF_R_DEST)"
 	@echo "Staged: $(RBF_R_DEST)"
 	@echo "Copy the contents of dist/ onto the Pocket SD card root."
+
+ROM ?= sim/roms/mfootb.bin
+
+.PHONY: tracegen smoke
+tracegen:
+	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_trace --top-module b6100_cpu \
+		-o b6100_trace sim/b6100_cpu_trace.cpp src/b6100_cpu.v
+
+smoke: tracegen
+	sim/obj_dir_trace/b6100_trace $(ROM) 1000000 0 1 sim/smoke.csv
+	@wc -l sim/smoke.csv
