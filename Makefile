@@ -53,6 +53,24 @@ smoke: tracegen
 	sim/obj_dir_trace/b6100_trace $(ROM) 1000000 0 1 sim/smoke.csv
 	@wc -l sim/smoke.csv
 
+.PHONY: frames
+frames:
+	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_frames --top-module football_system \
+		-o football_frames sim/football_system_tb.cpp \
+		src/football_system.v src/b6100_cpu.v src/led_capture.v src/video_renderer.v
+	# The dash field (ball movement) and the digit readout (down/field
+	# position/yards to go) are mutually-exclusive display modes on real
+	# hardware -- confirmed against MAME (mfootb, hh_rw5000.cpp): holding
+	# Status blanks the dash field for as long as it's held, and the digits
+	# never light without it. So this target runs the harness twice: once
+	# in "game" mode (kb=2 Forward, din=1, asserting only the dash
+	# brightness classes) for a real gameplay/movement capture, and once in
+	# "status" mode (kb=0, din=5 = difficulty + Status, asserting only the
+	# digit readout) for a short digit-readout capture. Both must exit 0.
+	mkdir -p sim/frames/game sim/frames/status
+	sim/obj_dir_frames/football_frames $(ROM) 180 2 1 1000 sim/frames/game game && \
+	sim/obj_dir_frames/football_frames $(ROM) 60 0 5 1000 sim/frames/status status
+
 MAME ?= mame
 GOLDEN_N ?= 2000000
 # Cycles to hold momentary-button inputs (kb, and DIN's Score bit) at their

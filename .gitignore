@@ -3,6 +3,8 @@
 sim/obj_dir_*/
 sim/roms/*.bin
 sim/*.ppm
+sim/frames/
+sim/*.wav
 *.csv
 /golden.tr
 /cfg/
