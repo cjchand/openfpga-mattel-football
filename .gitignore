@@ -3,3 +3,6 @@
 sim/obj_dir_*/
 sim/roms/*.bin
 *.csv
+/golden.tr
+/cfg/
+/snap/

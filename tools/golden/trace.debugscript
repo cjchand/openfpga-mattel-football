@@ -1,0 +1,2 @@
+trace golden.tr,maincpu,noloop,{tracelog "T,%03X,%X,%X,%02X,%03X\n",pc,a,c,b,s}
+go

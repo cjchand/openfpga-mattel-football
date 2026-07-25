@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""Diff a MAME golden trace against our Verilator trace.
+
+Both inputs may contain non-T lines (MAME interleaves disassembly); only
+lines starting with "T," are compared. Exits 0 if the shorter file is a
+prefix of the longer, nonzero with context on first divergence.
+"""
+import sys
+
+def t_lines(path):
+    with open(path, errors="replace") as f:
+        return [ln.rstrip("\n") for ln in f if ln.startswith("T,")]
+
+def main() -> int:
+    if len(sys.argv) != 3:
+        print(__doc__, file=sys.stderr)
+        return 2
+    a, b = t_lines(sys.argv[1]), t_lines(sys.argv[2])
+    n = min(len(a), len(b))
+    if n == 0:
+        print("FAIL: no T-lines found", file=sys.stderr)
+        return 1
+    for i in range(n):
+        if a[i] != b[i]:
+            lo = max(0, i - 5)
+            print(f"DIVERGENCE at executed-instruction #{i}:")
+            for j in range(lo, i + 1):
+                mark = ">>" if j == i else "  "
+                print(f"{mark} mame:{a[j]}   ours:{b[j]}")
+            return 1
+    print(f"PASS: {n} instructions identical "
+          f"(mame={len(a)} ours={len(b)} lines)")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())

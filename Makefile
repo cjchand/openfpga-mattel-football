@@ -51,3 +51,39 @@ tracegen:
 smoke: tracegen
 	sim/obj_dir_trace/b6100_trace $(ROM) 1000000 0 1 sim/smoke.csv
 	@wc -l sim/smoke.csv
+
+MAME ?= mame
+GOLDEN_N ?= 2000000
+# Cycles to hold momentary-button inputs (kb, and DIN's Score bit) at their
+# idle value before switching to the scenario's real value. Models MAME's
+# ioport digital fields, which only latch into their live value once per
+# (emulated) 60Hz screenless video frame -- not from cycle 0 -- so a field
+# held from machine start via tools/golden/hold_input.lua does not reach
+# read_kb()/read_din() until that first frame boundary. Empirically the
+# real MAME edge falls within [~600,~1480] cycles (bisected against a 2s
+# golden capture); 1000 sits in the middle of that safe window. See
+# docs/verification.md for the derivation.
+GOLDEN_SETTLE ?= 1000
+
+# scenario table: name -> kb, din, port, field (constant-from-boot inputs)
+# idle:  kb=0 din=1 (difficulty PRO1 is DIN bit0, default on)
+# fwd:   kb=2 din=1 hold ":IN.0"/"Forward"
+# kick:  kb=8 din=1 hold ":IN.0"/"Kick"
+# score: kb=0 din=3 hold ":IN.1"/"Score"
+
+.PHONY: golden
+golden: tracegen
+	@case "$(SCENARIO)" in \
+	  idle)  KB=0; DIN=1; PORT=;      FIELD=;;        \
+	  fwd)   KB=2; DIN=1; PORT=:IN.0; FIELD=Forward;; \
+	  kick)  KB=8; DIN=1; PORT=:IN.0; FIELD=Kick;;    \
+	  score) KB=0; DIN=3; PORT=:IN.1; FIELD=Score;;   \
+	  *) echo "usage: make golden SCENARIO=idle|fwd|kick|score"; exit 2;; \
+	esac; \
+	rm -f golden.tr; \
+	GOLDEN_PORT=$$PORT GOLDEN_FIELD=$$FIELD \
+	  $(MAME) mfootb -debug -debugscript tools/golden/trace.debugscript \
+	  -autoboot_script tools/golden/hold_input.lua \
+	  -video none -sound none -nothrottle -seconds_to_run 45; \
+	sim/obj_dir_trace/b6100_trace $(ROM) $(GOLDEN_N) $$KB $$DIN ours.csv $(GOLDEN_SETTLE); \
+	python3 tools/golden/trace_diff.py golden.tr ours.csv
