@@ -15,10 +15,13 @@ green field, and column dividers. This spec covers integrating it.
 
 ## Non-goals
 
-- Replicating the physical hardware's LED "ghost" (dim, always-visible
-  unlit-segment) look. Per explicit user direction: only two states are
-  rendered, dim (defender) and bright (player) — nothing at level 0.
 - Pixel-exact reproduction of the real device's typography or proportions.
+- Changing the existing LED rendering logic (ghost/dim/bright three-level
+  look) at all — **revised** after initial brainstorming: the user tried
+  the field-only ghost look on hardware and wants to keep it as-is. This
+  spec no longer touches `level_color`'s ghost case or the "level 0 draws
+  nothing" behavior; only LED rectangle *positions* move, to align with
+  the new bezel art's digit windows and field grid.
 - Changing the core's fixed 12.288MHz/no-PLL video clock. All canvas sizing
   decisions here work within the existing `H_TOTAL x V_TOTAL = 204800`
   constraint (204800 * 60 = 12,288,000 Hz), so 60.000Hz holds with no PLL
@@ -53,11 +56,14 @@ Starting from the user-supplied 640x402 overlay:
 
 `video_renderer.v` composites three layers per pixel, first match wins:
 
-1. **LED segments/dashes** (existing mechanism, simplified): the same
-   per-segment/per-dash rectangle test as today, recalibrated to the
-   measured geometry. `levels[...]==0` draws nothing (falls through to
-   layer 2/3); `1`=dim, `2`=bright, using the existing `C_DIM`/`C_BRIGHT`
-   colors. `C_GHOST` is removed entirely.
+1. **LED segments/dashes** (unchanged logic, moved geometry only): the same
+   per-segment/per-dash rectangle test and three-level `level_color`
+   (ghost/dim/bright) as today, byte-for-byte the same drawing behavior —
+   every segment/dash rectangle always draws something (ghost included),
+   fully covering that rectangle regardless of level. Only the rectangles'
+   *positions* change, recalibrated to the measured geometry below so they
+   land inside the new bezel art's digit windows and field grid instead of
+   their old `mfootb.lay`-derived guesses.
 2. **Label text bitmap** (new): the six label strings ("DOWN", "FIELD
    POSITION", "YARDS TO GO", "HOME", "TIME REMAINING", "VISITOR") stored as
    a small indexed-color bitmap in a dedicated block RAM, covering just the
@@ -69,8 +75,10 @@ Starting from the user-supplied 640x402 overlay:
    digit windows, green field strip, white field dividers, and the black
    corner accents flanking the label bar — plain rectangles at the measured
    coordinates below, same technique the renderer already uses for LED
-   rects. Falls back to solid black (today's behavior) if the bezel is
-   disabled (see Settings toggle).
+   rects. Only visible in the gaps between LED rectangles (since layer 1
+   always draws over its own area, ghost included) and, when the bezel is
+   disabled (see Settings toggle), replaced with solid black — today's
+   field-only look, LED rendering unaffected either way.
 
 ### Measured geometry (502x360 canvas, from the cleaned/scaled overlay)
 
@@ -111,8 +119,8 @@ did.
 
 ## Files touched
 
-- `src/video_renderer.v` — new layered compositing, recalibrated geometry,
-  `bezel_enable` input, drops `C_GHOST`.
+- `src/video_renderer.v` — new layered compositing, recalibrated LED
+  geometry (drawing logic unchanged), `bezel_enable` input.
 - New: label bitmap source data (generated `.mif` + a small ROM module, or
   inlined depending on toolchain fit — decided during implementation).
 - `src/fpga/core/core_top.v` — canvas resize (`H_ACTIVE` 400->502,

@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- No ghost/off-state LED rendering — only dim (level 1) and bright (level 2); level 0 draws nothing (background shows through). Per `docs/superpowers/specs/2026-07-26-bezel-overlay-design.md`.
+- LED rendering logic (ghost/dim/bright three-level look, every segment/dash rectangle always drawing something) stays byte-for-byte unchanged from today — **only rectangle positions move**, to align with the new bezel art. Per `docs/superpowers/specs/2026-07-26-bezel-overlay-design.md` (revised after initial brainstorming).
 - Canvas: 502x360 (`H_ACTIVE`=502, `V_ACTIVE`=360, `H_TOTAL`=512, `V_TOTAL`=400 unchanged — `H_TOTAL*V_TOTAL`=204800, so `204800*60=12,288,000`Hz holds exactly with the existing fixed 12.288MHz clock, no PLL changes).
 - Label bitmap ROM budget: ~113Kbit (4bpp, 502x58px) — do not balloon this into a full-canvas bitmap (would be ~42% of the Cyclone V 5CEBA4's total embedded memory).
 - All new Verilog must pass `make sim` (Verilator `-Wall`, zero warnings) before any Quartus build.
@@ -240,17 +240,17 @@ Claude-Session: https://claude.ai/code/session_015yrh5DdvMaaBpGX643Zncc"
 Read the current `sim/video_renderer_tb.cpp` in full first — it has existing test scaffolding (a pixel-sampling helper, PPM writer) to reuse. Add these new test cases (adapt to match whatever helper function names already exist in that file, e.g. if there's already a `px(x,y)` sampling helper, reuse it rather than duplicating):
 
 ```cpp
-static void test_ghost_level_draws_nothing() {
-    // level 0 anywhere inside a digit segment must NOT be C_GHOST (that
-    // color no longer exists) -- it must show whatever's under it: with
-    // bezel_enable=1 that's black (inside the digit window), with
-    // bezel_enable=0 that's plain black background either way.
+static void test_ghost_level_still_renders_ghost_color() {
+    // Unchanged behavior check: level 0 inside a digit segment must still
+    // be C_GHOST (0x1A0505), exactly as before this feature -- only the
+    // segment's *position* moved, per the user's last-minute scope change
+    // (keep the existing ghost look, don't touch LED drawing logic).
     Vvideo_renderer d;
     d.bezel_enable = 1;
-    for (int i = 0; i < 198; i++) d.levels = 0; // all levels off (levels is a single wide input in the real module; set via whatever bit-packing the existing testbench already uses for `levels`)
+    d.levels = 0; // all levels off
     d.x = 66; d.y = 51; // inside digit window 1's first cell, segment 'a' area (see geometry below)
     d.eval();
-    CHECK(d.rgb == 0x000000, "level-0 segment area shows black digit-window background, not a ghost color");
+    CHECK(d.rgb == 0x1A0505, "level-0 segment area still shows the ghost color, at its new position");
 }
 
 static void test_bezel_disabled_is_plain_black_outside_leds() {
@@ -322,6 +322,7 @@ module video_renderer (
     output reg  [23:0]  rgb
 );
     localparam [23:0] C_BG     = 24'h000000;
+    localparam [23:0] C_GHOST  = 24'h1A0505; // unchanged from today's field-only look
     localparam [23:0] C_DIM    = 24'h801414;
     localparam [23:0] C_BRIGHT = 24'hFF2020;
     localparam [23:0] C_GRAY   = 24'hCBCBCB;
@@ -357,9 +358,9 @@ module video_renderer (
 
     function [23:0] level_color(input [1:0] lvl);
         case (lvl)
+            2'd0: level_color = C_GHOST;
             2'd1: level_color = C_DIM;
-            2'd2: level_color = C_BRIGHT;
-            default: level_color = C_BG; // unused: level 0 is never composited (see main block)
+            default: level_color = C_BRIGHT;
         endcase
     endfunction
 
@@ -385,7 +386,6 @@ module video_renderer (
     reg [8:0] rx0, ry0, rw, rh;
     reg [1:0] lvl;
     reg [8:0] dy;
-    reg       drew_led;
 
     always @* begin
         // --- bezel background (bottom layer) ---
@@ -413,11 +413,9 @@ module video_renderer (
                     rgb = C_GRAY;
         end
 
-        // --- decimal point (digit 3, in window 2's cell 1): drawn as part
-        // of the digit-segment layer below, level from levels[(3*11+7)*2+:2]
-
-        // --- digit segments (7 cells x 7 segments) ---
-        drew_led = 1'b0;
+        // --- digit segments (7 cells x 7 segments): unconditional draw,
+        // same as today -- every segment rectangle always shows its
+        // ghost/dim/bright color, no "is it lit" gating.
         for (d = 0; d < 7; d = d + 1)
             for (s = 0; s < 7; s = s + 1) begin
                 {rx0, ry0, rw, rh} = seg_rect(s[2:0]);
@@ -425,34 +423,31 @@ module video_renderer (
                 ry0 = ry0 + DIGIT_Y;
                 if (x >= rx0 && x < rx0 + rw && y >= ry0 && y < ry0 + rh) begin
                     lvl = levels[(d*11 + s)*2 +: 2];
-                    if (lvl != 2'd0) begin
-                        rgb = level_color(lvl);
-                        drew_led = 1'b1;
-                    end
+                    rgb = level_color(lvl);
                 end
             end
 
         // decimal point: digit 3 only (window 2 cell 1, x=239), line 7,
         // 6x6 just right of and below the digit cell
-        if (!drew_led && x >= (digit_x(3'd3) + 9'd25) && x < (digit_x(3'd3) + 9'd31) &&
+        if (x >= (digit_x(3'd3) + 9'd25) && x < (digit_x(3'd3) + 9'd31) &&
             y >= (DIGIT_Y + 9'd26) && y < (DIGIT_Y + 9'd32)) begin
             lvl = levels[(3*11 + 7)*2 +: 2];
-            if (lvl != 2'd0) rgb = level_color(lvl);
+            rgb = level_color(lvl);
         end
 
-        // dash field: 9 cols x 3 rows
+        // dash field: 9 cols x 3 rows, unconditional draw as above
         for (col = 0; col < 9; col = col + 1) begin
             dy = DASH_Y0;
             if (x >= dash_x(col[3:0]) && x < dash_x(col[3:0]) + DASH_W) begin
                 if (y >= DASH_Y0 && y < DASH_Y0 + DASH_H) begin
                     lvl = levels[(col*11 + 10)*2 +: 2]; // line 10 = top row
-                    if (lvl != 2'd0) rgb = level_color(lvl);
+                    rgb = level_color(lvl);
                 end else if (y >= DASH_Y1 && y < DASH_Y1 + DASH_H) begin
                     lvl = levels[(col*11 + 9)*2 +: 2]; // line 9 = middle row
-                    if (lvl != 2'd0) rgb = level_color(lvl);
+                    rgb = level_color(lvl);
                 end else if (y >= DASH_Y2 && y < DASH_Y2 + DASH_H) begin
                     lvl = levels[(col*11 + 8)*2 +: 2]; // line 8 = bottom row
-                    if (lvl != 2'd0) rgb = level_color(lvl);
+                    rgb = level_color(lvl);
                 end
             end
         end
