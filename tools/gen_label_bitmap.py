@@ -8,22 +8,24 @@ from pathlib import Path
 from PIL import Image
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SRC_PNG = REPO_ROOT / "assets" / "bezel" / "overlay_502x360.png"
+SRC_PNG = REPO_ROOT / "assets" / "bezel" / "overlay_400x360.png"
 OUT_BITMAP = REPO_ROOT / "src" / "label_bitmap.mem"
 OUT_PALETTE = REPO_ROOT / "src" / "label_palette.mem"
 
 # Label bar bands, measured from the overlay (see
 # docs/superpowers/specs/2026-07-26-bezel-overlay-design.md "Measured
-# geometry"): bar 1 y 0-28 (29 rows), bar 2 y 103-131 (29 rows).
+# geometry"): bar 1 y 0-28 (29 rows), bar 2 y 103-131 (29 rows). Unaffected
+# by the 502->400 width revert (only x-axis geometry scales with width;
+# the source height scale factor, 402->360, was unchanged throughout).
 BAR1_Y0, BAR1_Y1 = 0, 28
 BAR2_Y0, BAR2_Y1 = 103, 131
-WIDTH = 502
+WIDTH = 400
 
 
 def main():
     im = Image.open(SRC_PNG).convert("RGB")
-    if im.size != (502, 360):
-        sys.exit(f"expected 502x360, got {im.size}")
+    if im.size != (400, 360):
+        sys.exit(f"expected 400x360, got {im.size}")
 
     bar1 = im.crop((0, BAR1_Y0, WIDTH, BAR1_Y1 + 1))
     bar2 = im.crop((0, BAR2_Y0, WIDTH, BAR2_Y1 + 1))

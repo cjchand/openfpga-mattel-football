@@ -96,17 +96,17 @@ int main(int argc, char** argv) {
         tick++;
 
         if (d.window_tick) {
-            std::vector<uint8_t> buf(502 * 360 * 3);
+            std::vector<uint8_t> buf(400 * 360 * 3);
             for (int y = 0; y < 360; y++)
-                for (int x = 0; x < 502; x++) {
+                for (int x = 0; x < 400; x++) {
                     d.px_x = x; d.px_y = y; d.eval();
                     uint32_t p = d.px_rgb;
-                    size_t i = ((size_t)y * 502 + x) * 3;
+                    size_t i = ((size_t)y * 400 + x) * 3;
                     buf[i] = p >> 16; buf[i+1] = p >> 8; buf[i+2] = p;
                 }
             char path[512];
             std::snprintf(path, sizeof path, "%s/frame_%03d.ppm", outdir, frames);
-            if (!write_ppm(path, 502, 360, buf.data())) {
+            if (!write_ppm(path, 400, 360, buf.data())) {
                 std::fprintf(stderr, "failed to write frame '%s'\n", path);
                 return 2;
             }
@@ -116,13 +116,16 @@ int main(int argc, char** argv) {
             // boot display already lights both brightness classes and would
             // otherwise make these checks pass regardless of input.
             // Geometry below mirrors src/video_renderer.v's dash_x()/
-            // DASH_Y0..2/digit_x()/DIGIT_Y (bezel-overlay layout).
+            // DASH_Y0..2/digit_x()/DIGIT_Y (bezel-overlay layout, 400-wide
+            // canvas -- reverted from an initial 502-wide attempt that left
+            // zero horizontal front porch on real hardware; see
+            // docs/verification.md).
             bool post_settle = tick >= settle;
             int frame_bright_col = -1;
             for (int col = 0; col < 9; col++)
                 for (int row = 0; row < 3; row++) {
                     int cy = (row == 0) ? 201 : (row == 1) ? 267 : 333;
-                    d.px_x = 4 + 55 * col + 10; d.px_y = cy + 3; d.eval();
+                    d.px_x = 16 + 44 * col + 8; d.px_y = cy + 3; d.eval();
                     if (post_settle && d.px_rgb == 0xFF2020) {
                         saw_bright_dash = true;
                         if (frame_bright_col < 0) frame_bright_col = col;
@@ -130,7 +133,7 @@ int main(int argc, char** argv) {
                     if (post_settle && d.px_rgb == 0x801414) saw_dim_dash = true;
                 }
             if (post_settle) dash_cols.push_back(frame_bright_col);
-            static const int dx[7] = {66, 116, 196, 239, 282, 361, 411};
+            static const int dx[7] = {50, 91, 152, 187, 222, 285, 326};
             for (int dg = 0; dg < 7; dg++) {
                 d.px_x = dx[dg] + 12; d.px_y = 51 + 2; d.eval();  // segment a
                 if (post_settle && d.px_rgb != 0x1A0505 && d.px_rgb != 0x000000) saw_digit = true;

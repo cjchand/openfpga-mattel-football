@@ -23,11 +23,12 @@ int main(int argc, char** argv) {
     Vlabel_rom d;
 
     // x=50, row 2 of bar 1: inside the gray background field, clear of the
-    // ~30px black frame border that runs down both edges of the bar (x<30
-    // and x>470ish) and clear of any glyph -- verified directly against
-    // both the source PNG and the generated .mem files before writing this
-    // check. Must be the label bar's background gray, not black or green
-    // (proves the ROM is being read, not returning garbage/zero).
+    // ~24px black frame border that runs down both edges of the bar (x<24
+    // and x>=376 at the 400-wide canvas) and clear of any glyph -- verified
+    // directly against both the source PNG and the generated .mem files
+    // before writing this check. Must be the label bar's background gray,
+    // not black or green (proves the ROM is being read, not returning
+    // garbage/zero).
     uint32_t bg1 = sample(d, 50, 2);
     CHECK(((bg1 >> 16) & 0xFF) > 150 && ((bg1 >> 16) & 0xFF) < 230,
           "bar1 background is light gray (R channel)");
@@ -39,17 +40,17 @@ int main(int argc, char** argv) {
     CHECK(((bg2 >> 16) & 0xFF) > 150 && ((bg2 >> 16) & 0xFF) < 230,
           "bar2 background is light gray (R channel)");
 
-    // Row 15 of bar 1 crosses the "DOWN" label text (glyphs occupy overlay
-    // rows 8-23 / x roughly 135-220, verified against the source PNG) --
-    // scanning only the interior gray field (x=30..469, clear of the black
-    // frame border on both edges) at least one pixel must differ from the
-    // plain background gray (bg1), proving the ROM holds real image
-    // content (text), not a solid fill, and that addr math varies across x
-    // (a truncation bug that wraps every x to the same word would make the
-    // whole row uniform). Restricting to the interior keeps this a text
-    // check rather than a trivial border-vs-background check.
+    // Row 15 of bar 1 crosses the "DOWN"/"FIELD POSITION"/"YARDS TO GO"
+    // label text -- scanning only the interior gray field (x=30..369,
+    // clear of the black frame border on both edges) at least one pixel
+    // must differ from the plain background gray (bg1), proving the ROM
+    // holds real image content (text), not a solid fill, and that addr
+    // math varies across x (a truncation bug that wraps every x to the
+    // same word would make the whole row uniform). Restricting to the
+    // interior keeps this a text check rather than a trivial
+    // border-vs-background check.
     bool row_has_variation = false;
-    for (int px = 30; px < 470; px++) {
+    for (int px = 30; px < 370; px++) {
         if (sample(d, px, 15) != bg1) { row_has_variation = true; break; }
     }
     CHECK(row_has_variation, "bar1 row 15 contains at least one non-background pixel (label text)");

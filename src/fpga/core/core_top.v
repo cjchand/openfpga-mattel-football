@@ -520,6 +520,13 @@ assign video_hs = vidout_hs;
     // (H_TOTAL*V_TOTAL=204800) as the template's original 320x240 mode, so
     // the fixed 12.288MHz PLL still yields exactly 60.000Hz with no PLL
     // changes: 204800 * 60 = 12,288,000.
+    //
+    // VID_H_ACTIVE briefly went to 502 (bezel-overlay work) but that left
+    // H_TOTAL-H_ACTIVE-H_BPORCH = 512-502-10 = 0 cycles of horizontal front
+    // porch -- confirmed on real hardware as whole-screen banding/ghosting
+    // and repeated/overlapping content. Reverted to 400, restoring the
+    // original 102-cycle front porch this configuration was always
+    // validated with. See docs/verification.md.
     localparam  VID_V_BPORCH = 'd10;
     localparam  VID_V_ACTIVE = 'd360;
     localparam  VID_V_TOTAL = 'd400;
@@ -658,6 +665,20 @@ end
     wire [3:0] football_kb  = { cont1_key[4], cont1_key[0], cont1_key[3], cont1_key[1] }; // {Kick,Up,Forward,Down}
     wire [3:0] football_din = { 1'b0, cont1_key[14], cont1_key[15], 1'b1 }; // {FactoryTest=0,Status,Score,Difficulty=PRO1}
 
+    // "Presentation" settings toggle (interact.json), read through the
+    // core-template's existing but previously-unused datatable mechanism
+    // (core_bridge_cmd.v's mf_datatable, port A -- port B is driven by the
+    // host in response to bridge reads/writes at the matching address).
+    // Fixed at datatable word 0 (bridge address 0xF8002000, low 12 bits
+    // all zero -> word index 0 after the >>2 in core_bridge_cmd.v).
+    assign datatable_addr = 10'd0;
+    assign datatable_wren = 1'b0;
+    assign datatable_data = 32'd0;
+    wire   bezel_enable_74a = datatable_q[0];
+
+    wire   bezel_enable;
+synch_2 bezel_enable_sync ( bezel_enable_74a, bezel_enable, clk_core_12288, , );
+
     wire [23:0] football_rgb;
     wire        football_spk;
 football_system fb1 (
@@ -673,6 +694,7 @@ football_system fb1 (
     .px_y       ( visible_y[8:0] ),
     .px_rgb     ( football_rgb ),
     .spk        ( football_spk ),
+    .bezel_enable ( bezel_enable ),
     .window_tick(  )
 );
 

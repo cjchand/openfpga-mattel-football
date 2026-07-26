@@ -243,3 +243,60 @@ button), gameplay, and audio all confirmed working as expected. D-pad
 Right maps to "Forward" regardless of which side is on offense (a known
 UX quirk of the original real-cabinet control scheme, not a bug) — a
 possible "flip controls for player 2" option is deferred to a later plan.
+
+## Bezel overlay hardware bring-up (Plan 5)
+
+`video_renderer.v` was extended with a layered bezel compositor (LED
+segments/dashes, a label-text ROM, and a procedural background) per
+`docs/superpowers/specs/2026-07-26-bezel-overlay-design.md`. Implemented via
+`superpowers:subagent-driven-development` for Tasks 1-2 (label ROM,
+renderer rewrite); Task 3 (core_top.v wiring) was built and packaged by a
+subagent, but the resulting hardware bugs below were found and fixed via
+direct, hands-on hardware debugging (tight iterative loop against real
+photos from the human, not a fit for the subagent dispatch/report cycle).
+
+### Bug: zero horizontal front porch (canvas 502 wide)
+
+The initial design widened the canvas from 400 to 502px to better match the
+overlay art's native aspect ratio, reasoning that `H_TOTAL=512` minus the
+existing 10px back porch left 502px of budget. This was wrong: it left
+`H_TOTAL - H_ACTIVE - H_BPORCH = 512 - 502 - 10 = 0` cycles of horizontal
+**front** porch, versus the original 400-wide config's 102 cycles. On real
+hardware this produced whole-screen banding/ghosting and repeated,
+overlapping content — visible even with the bezel disabled, confirming a
+core video-timing bug rather than a bezel-rendering one. Fixed by reverting
+to the exactly-400-wide configuration already validated across every prior
+hardware session in this project (zero new timing risk), rather than
+picking another untested width.
+
+### Bug: dash marks not centered between field dividers
+
+Independent of the timing bug: `dash_x(col)` was computed flush against the
+left divider of each field column (`4 + 55*col`) instead of centered in the
+42px gap between dividers. Fixed with the correct centering margin
+(`16 + 44*col` at the reverted 400-wide geometry). Found by code inspection
+after the human reported "LEDs not centered between yardlines," not by
+guessing.
+
+### Config-only fix: aspect ratio / letterboxing
+
+The Pocket's `video.json` `aspect_w`/`aspect_h` declares the *display*
+aspect ratio; when it differs from the pixel buffer's own `width:height`
+ratio, the scaler stretches the buffer to fill it non-uniformly. Setting
+`aspect_w:aspect_h` to the overlay's true 320:201 ratio (vs. the buffer's
+400:360) caused visible horizontal stretching of all content, including the
+digit displays — reported by the human as "numbers seem stretched too
+wide" and "font weight too heavy." Correct fix (in progress): bake true,
+undistorted-aspect content into the fixed 400x360 buffer directly (uniform
+scale to fit width, black bars top/bottom for the remainder), and declare
+`aspect_w:aspect_h` matching the buffer's own 400:360 ratio so the scaler
+applies no further distortion — letterboxing happens inside our own pixel
+buffer, not via scaler stretching.
+
+### Confirmed working (human, on physical Pocket, 2026-07-26)
+
+Bezel on/off toggle (`interact.json`'s "Presentation" setting), label text
+legibility, digit/dash placement, and no video-timing artifacts, all
+confirmed at the reverted 400-wide canvas. Aspect-ratio letterboxing and
+font-weight refinement were still in progress as of this writing (see
+above) — this section will be updated once that lands.

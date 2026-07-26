@@ -1,8 +1,12 @@
 // Layered renderer: LED segments/dashes > label-bar text (label_rom) >
-// procedural bezel background. Canvas 502x360. Geometry measured from
-// assets/bezel/overlay_502x360.png -- see
+// procedural bezel background. Canvas 400x360 -- reverted from an
+// initial 502x360 attempt that left zero horizontal front porch on real
+// hardware (whole-screen banding/ghosting); see docs/verification.md.
+// Geometry measured from assets/bezel/overlay_400x360.png -- see
 // docs/superpowers/specs/2026-07-26-bezel-overlay-design.md "Measured
-// geometry" for the source measurements this is derived from.
+// geometry" for the (502-wide) source measurements this is proportionally
+// rescaled from (y-axis geometry is unchanged; only x-axis positions
+// scale with canvas width, by a factor of 400/502).
 module video_renderer (
     input  wire [8:0]   x,
     input  wire [8:0]   y,
@@ -19,12 +23,13 @@ module video_renderer (
 
     // digit window x-origins (3 windows; window 1 & 3 hold 2 digit cells,
     // window 2 holds 3), and per-cell x-origins within each window,
-    // measured/centered per the design spec.
+    // measured/centered per the design spec at 400 width (windows at
+    // x[33,131]/[141,258]/[268,366], corner accents x[0,23]/[376,399]).
     function [8:0] digit_x(input [2:0] d);
         case (d)
-            3'd0: digit_x = 9'd66;   3'd1: digit_x = 9'd116;   // window 1
-            3'd2: digit_x = 9'd196;  3'd3: digit_x = 9'd239;  3'd4: digit_x = 9'd282; // window 2
-            3'd5: digit_x = 9'd361;  3'd6: digit_x = 9'd411;   // window 3
+            3'd0: digit_x = 9'd50;   3'd1: digit_x = 9'd91;    // window 1
+            3'd2: digit_x = 9'd152;  3'd3: digit_x = 9'd187;  3'd4: digit_x = 9'd222; // window 2
+            3'd5: digit_x = 9'd285;  3'd6: digit_x = 9'd326;   // window 3
             default: digit_x = 9'd0;
         endcase
     endfunction
@@ -54,14 +59,20 @@ module video_renderer (
     endfunction
 
     // dash-field column x-origins (9 columns) and row y-origins (3 rows),
-    // measured from the field grid band y191-344.
+    // measured from the field grid band y191-344. Dividers sit at
+    // x=1+44*col (2px wide, see the divider loop below); each dash is
+    // centered in the 42px gap between consecutive dividers: gap starts at
+    // divider_end=3+44*col, dash width 16, so left margin=(42-16)/2=13 ->
+    // dash_x=3+44*col+13=16+44*col. (An earlier version omitted this
+    // centering margin and drew dashes flush against the left divider --
+    // fixed here, see docs/verification.md.)
     function [8:0] dash_x(input [3:0] col);
-        dash_x = 9'd4 + 9'd55 * col;
+        dash_x = 9'd16 + 9'd44 * col;
     endfunction
     localparam [8:0] DASH_Y0 = 9'd201;
     localparam [8:0] DASH_Y1 = 9'd267;
     localparam [8:0] DASH_Y2 = 9'd333;
-    localparam [8:0] DASH_W  = 9'd20;
+    localparam [8:0] DASH_W  = 9'd16;
     localparam [8:0] DASH_H  = 9'd6;
 
     wire [23:0] label_rgb;
@@ -96,9 +107,9 @@ module video_renderer (
         end else if (y >= 9'd29 && y < 9'd103) begin
             // corner accents + 3 digit windows are black; everything else
             // in this band is bezel gray
-            if ((x < 9'd30) || (x >= 9'd40 && x < 9'd167) ||
-                (x >= 9'd177 && x < 9'd325) || (x >= 9'd335 && x < 9'd462) ||
-                (x >= 9'd472))
+            if ((x < 9'd24) || (x >= 9'd33 && x < 9'd132) ||
+                (x >= 9'd141 && x < 9'd259) || (x >= 9'd268 && x < 9'd367) ||
+                (x >= 9'd376))
                 rgb = C_BG;
             else
                 rgb = C_GRAY;
@@ -106,10 +117,11 @@ module video_renderer (
             rgb = C_GREEN;
         end else begin
             // field grid band (y 191-344) and bottom border (y 345-359):
-            // black background with 10 gray dividers bounding 9 columns
+            // black background with 10 gray dividers (2px wide, 44px
+            // pitch) bounding 9 columns
             rgb = C_BG;
             for (col = 0; col < 10; col = col + 1)
-                if (x >= (9'd1 + 9'd55 * col[3:0]) && x < (9'd4 + 9'd55 * col[3:0]))
+                if (x >= (9'd1 + 9'd44 * col[3:0]) && x < (9'd3 + 9'd44 * col[3:0]))
                     rgb = C_GRAY;
         end
 

@@ -743,6 +743,15 @@ set_global_assignment -name VERILOG_FILE core/core_bridge_cmd.v
 set_global_assignment -name VERILOG_FILE ../b6100_cpu.v
 set_global_assignment -name VERILOG_FILE ../led_capture.v
 set_global_assignment -name VERILOG_FILE ../video_renderer.v
+set_global_assignment -name VERILOG_FILE ../label_rom.v
+# label_rom.v's $readmemh calls use bare filenames ("label_bitmap.mem" /
+# "label_palette.mem", both at src/) with no directory prefix. quartus_map's
+# working directory is src/fpga/ (see Makefile's `bitstream` target), one
+# level below where those files actually live -- add src/ to the search
+# path defensively so Quartus finds them regardless of its default lookup
+# behavior (unconfirmed whether the first 400-wide build actually needed
+# this; adding it removes the ambiguity rather than re-testing it).
+set_global_assignment -name SEARCH_PATH ../
 set_global_assignment -name VERILOG_FILE ../football_system.v
 set_global_assignment -name VERILOG_FILE ../ce_gen.v
 set_global_assignment -name VERILOG_FILE ../rom_loader.v
