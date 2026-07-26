@@ -516,12 +516,16 @@ assign video_skip = vidout_skip;
 assign video_vs = vidout_vs;
 assign video_hs = vidout_hs;
 
+    // 400x360 to match video_renderer's canvas (Plan 3). Same product
+    // (H_TOTAL*V_TOTAL=204800) as the template's original 320x240 mode, so
+    // the fixed 12.288MHz PLL still yields exactly 60.000Hz with no PLL
+    // changes: 204800 * 60 = 12,288,000.
     localparam  VID_V_BPORCH = 'd10;
-    localparam  VID_V_ACTIVE = 'd240;
-    localparam  VID_V_TOTAL = 'd512;
+    localparam  VID_V_ACTIVE = 'd360;
+    localparam  VID_V_TOTAL = 'd400;
     localparam  VID_H_BPORCH = 'd10;
-    localparam  VID_H_ACTIVE = 'd320;
-    localparam  VID_H_TOTAL = 'd400;
+    localparam  VID_H_ACTIVE = 'd400;
+    localparam  VID_H_TOTAL = 'd512;
 
     reg [15:0]  frame_count;
     
@@ -537,9 +541,6 @@ assign video_hs = vidout_hs;
     reg         vidout_vs;
     reg         vidout_hs, vidout_hs_1;
     
-    reg [9:0]   square_x = 'd135;
-    reg [9:0]   square_y = 'd95;
-
 always @(posedge clk_core_12288 or negedge reset_n) begin
 
     if(~reset_n) begin
@@ -584,18 +585,16 @@ always @(posedge clk_core_12288 or negedge reset_n) begin
 
         // inactive screen areas are black
         vidout_rgb <= 24'h0;
-        // generate active video
+        // generate active video: football_system's renderer is pure
+        // combinational (x,y)->RGB, so it's already valid this same cycle
+        // for the CURRENT visible_x/visible_y before we register the result
         if(x_count >= VID_H_BPORCH && x_count < VID_H_ACTIVE+VID_H_BPORCH) begin
 
             if(y_count >= VID_V_BPORCH && y_count < VID_V_ACTIVE+VID_V_BPORCH) begin
                 // data enable. this is the active region of the line
                 vidout_de <= 1;
-                
-                vidout_rgb[23:16] <= 8'd60;
-                vidout_rgb[15:8]  <= 8'd60;
-                vidout_rgb[7:0]   <= 8'd60;
-                
-            end 
+                vidout_rgb <= football_rgb;
+            end
         end
     end
 end
@@ -603,51 +602,93 @@ end
 
 
 
-//
-// audio i2s silence generator
-// see other examples for actual audio generation
-//
+////////////////////////////////////////////////////////////////////////////////////////
+// Mattel Football core: CPU + display + audio + ROM loading
 
-assign audio_mclk = audgen_mclk;
-assign audio_dac = audgen_dac;
-assign audio_lrck = audgen_lrck;
+    wire        game_ce;
+ce_gen cg1 (
+    .clk        ( clk_core_12288 ),
+    .rst_n      ( reset_n ),
+    .ce         ( game_ce )
+);
 
-// generate MCLK = 12.288mhz with fractional accumulator
-    reg         [21:0]  audgen_accum;
-    reg                 audgen_mclk;
-    parameter   [20:0]  CYCLE_48KHZ = 21'd122880 * 2;
+    wire [9:0]  football_rom_addr;
+    wire [7:0]  football_rom_data;
+rom_loader #( .SLOT_BASE(32'h10000000) ) rl1 (
+    .clk            ( clk_74a ),
+    .bridge_wr      ( bridge_wr ),
+    .bridge_addr    ( bridge_addr ),
+    .bridge_wr_data ( bridge_wr_data ),
+    .rom_addr       ( football_rom_addr ),
+    .rom_data       ( football_rom_data )
+);
+
+    // Data slot id 0 (mfootb.bin, data.json) is never auto-transferred by
+    // APF: core_bridge_cmd.v's target_dataslot_read is host<-target, so the
+    // core itself must request the read. Without this, bridge_wr never
+    // fires for rom_loader and its BRAM stays at power-on zero -- the CPU
+    // then executes opcode 0x00 (NOP) forever, which is silent and never
+    // lights any LED, matching exactly what was observed on real hardware.
+    // Fire the request once, on the rising edge of status_setup_done (per
+    // core_bridge_cmd.v's own comment: "rising edge triggers a target
+    // command").
+    reg         status_setup_done_r;
+    reg         rom_load_pending;
 always @(posedge clk_74a) begin
-    audgen_accum <= audgen_accum + CYCLE_48KHZ;
-    if(audgen_accum >= 21'd742500) begin
-        audgen_mclk <= ~audgen_mclk;
-        audgen_accum <= audgen_accum - 21'd742500 + CYCLE_48KHZ;
+    status_setup_done_r <= status_setup_done;
+    target_dataslot_read <= 1'b0;
+    if (status_setup_done && !status_setup_done_r) begin
+        rom_load_pending <= 1'b1;
+    end
+    if (rom_load_pending) begin
+        target_dataslot_read      <= 1'b1;
+        target_dataslot_id        <= 16'd0;
+        target_dataslot_slotoffset <= 32'd0;
+        target_dataslot_bridgeaddr <= 32'h10000000;
+        target_dataslot_length    <= 32'd896; // mfootb.bin: 224 words x 4 bytes
+        rom_load_pending          <= 1'b0;
     end
 end
 
-// generate SCLK = 3.072mhz by dividing MCLK by 4
-    reg [1:0]   aud_mclk_divider;
-    wire        audgen_sclk = aud_mclk_divider[1] /* synthesis keep*/;
-    reg         audgen_lrck_1;
-always @(posedge audgen_mclk) begin
-    aud_mclk_divider <= aud_mclk_divider + 1'b1;
-end
+    // kb[3:0] bit order per MAME's mfootb IN.0 port (hh_rw5000.cpp):
+    // bit0=Down, bit1=Forward, bit2=Up, bit3=Kick. din[3:0] per IN.1:
+    // bit0=Difficulty(1=PRO1), bit1=Score, bit2=Status, bit3=FactoryTest.
+    // Pocket mapping per the design spec's Controls table: D-pad Up/Down/
+    // Right -> Up/Down/Forward, A -> Kick, Start -> Score, Select -> Status.
+    wire [3:0] football_kb  = { cont1_key[4], cont1_key[0], cont1_key[3], cont1_key[1] }; // {Kick,Up,Forward,Down}
+    wire [3:0] football_din = { 1'b0, cont1_key[14], cont1_key[15], 1'b1 }; // {FactoryTest=0,Status,Score,Difficulty=PRO1}
 
-// shift out audio data as I2S 
-// 32 total bits per channel, but only 16 active bits at the start and then 16 dummy bits
-//
-    reg     [4:0]   audgen_lrck_cnt;    
-    reg             audgen_lrck;
-    reg             audgen_dac;
-always @(negedge audgen_sclk) begin
-    audgen_dac <= 1'b0;
-    // 48khz * 64
-    audgen_lrck_cnt <= audgen_lrck_cnt + 1'b1;
-    if(audgen_lrck_cnt == 31) begin
-        // switch channels
-        audgen_lrck <= ~audgen_lrck;
-        
-    end 
-end
+    wire [23:0] football_rgb;
+    wire        football_spk;
+football_system fb1 (
+    .clk        ( clk_core_12288 ),
+    .rst_n      ( reset_n ),
+    .ce         ( game_ce ),
+    .rom_addr   ( football_rom_addr ),
+    .rom_data   ( football_rom_data ),
+    .kb         ( football_kb ),
+    .din        ( football_din ),
+    .score_btn  ( cont1_key[15] ),  // Start = Score (same physical button also feeds din[1] above)
+    .px_x       ( visible_x[8:0] ),
+    .px_y       ( visible_y[8:0] ),
+    .px_rgb     ( football_rgb ),
+    .spk        ( football_spk ),
+    .window_tick(  )
+);
+
+    wire audio_mclk_wire;
+audio_i2s ai1 (
+    .clk_74a    ( clk_74a ),
+    .spk        ( spk_sync ),
+    .audio_mclk ( audio_mclk_wire ),
+    .audio_sclk (  ),
+    .audio_lrck ( audio_lrck ),
+    .audio_dac  ( audio_dac )
+);
+assign audio_mclk = audio_mclk_wire;
+
+    wire spk_sync;
+synch_2 spk_sync_inst ( football_spk, spk_sync, audio_mclk_wire, , );
 
 
 ///////////////////////////////////////////////

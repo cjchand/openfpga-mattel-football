@@ -30,7 +30,7 @@ QPF           ?= ap_core.qpf
 .PHONY: bitstream
 bitstream:
 	docker run --platform linux/amd64 --rm -t \
-		-v $(PWD)/src/fpga:/build -w /build \
+		-v $(PWD)/src:/build/src -w /build/src/fpga \
 		$(QUARTUS_IMAGE) quartus_sh --flow compile $(QPF)
 
 RBF        ?= src/fpga/output_files/ap_core.rbf

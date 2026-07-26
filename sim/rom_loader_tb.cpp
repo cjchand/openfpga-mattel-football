@@ -42,10 +42,15 @@ struct Loader {
         d.bridge_wr = 0;
     }
 
-    // load a 896-byte image via 224 word writes, little-endian within each word
+    // load a 896-byte image via 224 word writes. Big-endian within each
+    // word (file byte 0 -> bits[31:24]) -- confirmed against real APF
+    // hardware via a debug readback during Plan 4 bring-up; the previous
+    // little-endian assumption here was untestable without hardware and
+    // turned out wrong (rom_loader.v's byte_sel extraction was fixed to
+    // match this once the mismatch was found).
     void load(const uint8_t* rom) {
         for (int w = 0; w < 224; w++) {
-            uint32_t word = rom[w*4] | (rom[w*4+1] << 8) | (rom[w*4+2] << 16) | (rom[w*4+3] << 24);
+            uint32_t word = (rom[w*4] << 24) | (rom[w*4+1] << 16) | (rom[w*4+2] << 8) | rom[w*4+3];
             write_word(w, word);
         }
     }

@@ -179,3 +179,67 @@ Override `GOLDEN_N` (instructions to run on our side) or `GOLDEN_SETTLE`
 ```bash
 make golden SCENARIO=fwd GOLDEN_N=500000
 ```
+
+## Hardware bring-up (Plan 4)
+
+`core_top.v` wires the real B6100 CPU, display renderer, audio, and
+APF-bridge ROM loader onto a physical Analogue Pocket (firmware 2.5). Boot
+worked on the first flash (no "General Error"/"Error in core setup"), but
+the game was completely dead — no lit LEDs, no sound, no response to
+input — despite everything looking correct in simulation. Two real,
+hardware-only bugs were found and fixed via an on-screen diagnostic overlay
+(temporary colored status bars rendered over the game area, added and later
+fully removed from `core_top.v`/`football_system.v`/`rom_loader.v`), since
+neither is reachable from `make sim`'s testbenches:
+
+### 1. ROM data slot was never actually requested from APF
+
+`core_top.v`'s template scaffolding declares `target_dataslot_read` (and
+its id/offset/bridge-address/length parameters) but never drives them.
+`"required": true` in `data.json` only makes APF refuse to boot without the
+file present — it does **not** auto-transfer the file's bytes over the
+bridge. That transfer only happens if the core itself issues a
+`target_dataslot_read` target-command (`core_bridge_cmd.v` is purely a
+host/target command relay; nothing in the vendored template fires this on
+its own). Without it, `rom_loader`'s BRAM stayed at its power-on-zero
+state, so the CPU executed opcode `0x00` (NOP) forever — silent, no lit
+LEDs, unresponsive to input, yet the CPU was technically "alive" (clock
+enable pulsing, PC nominally static at one address).
+
+Fix: `core_top.v` now fires `target_dataslot_read` once, for data slot id
+0, on the rising edge of `status_setup_done` (per `core_bridge_cmd.v`'s own
+comment that this is the intended trigger point), requesting the full
+896-byte ROM at bridge address `0x10000000` (matching `data.json`).
+
+### 2. ROM bytes arrived byte-reversed within each 32-bit word
+
+Even after the transfer started firing, the game still didn't run. A debug
+readback of the literal first word `rom_loader` stored showed `0x1D` in the
+byte position expected to hold `mfootb.bin`'s real first byte (`0x0C`) —
+`0x1D` is actually the file's **fourth** byte. APF packs each 32-bit bridge
+write **big-endian** (file byte 0 -> bits[31:24]), but `rom_loader.v`'s
+`byte_sel*8` extraction assumed little-endian (byte_sel 0 -> bits[7:0]),
+so every 4-byte group was read back in reverse order. This is why the CPU
+appeared briefly "alive" driving `str`/`seg`/`spk` right after boot (byte-
+reversed opcodes are still valid 8-bit values, just not the real program)
+but never ran actual game logic afterward.
+
+Fix: `rom_loader.v` now selects from the high end of the word
+(`byte_sel_rev = ~byte_sel`) to match APF's actual packing. The
+`rom_loader_tb.cpp` sim testbench's `load()` helper — which had the same
+unverified little-endian assumption, since no APF simulation exists to
+catch this before real hardware — was corrected to match.
+
+Neither bug was reachable by any existing sim testbench: Plan 3's
+human-reviewed gameplay frames (`football_system_tb.cpp`) feed ROM bytes
+directly from the file via `fread()`, bypassing `rom_loader`/the APF bridge
+entirely — that path only gets its first real exercise on physical
+hardware, which is exactly why both bugs surfaced only at this stage.
+
+### Confirmed working (human, on physical Pocket, 2026-07-26)
+
+Score/time display (Start button), down-and-distance display (Select
+button), gameplay, and audio all confirmed working as expected. D-pad
+Right maps to "Forward" regardless of which side is on offense (a known
+UX quirk of the original real-cabinet control scheme, not a bug) — a
+possible "flip controls for player 2" option is deferred to a later plan.
