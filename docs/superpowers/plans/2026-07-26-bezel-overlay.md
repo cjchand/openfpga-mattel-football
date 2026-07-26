@@ -178,10 +178,16 @@ int main(int argc, char** argv) {
     CHECK(((bg2 >> 16) & 0xFF) > 150 && ((bg2 >> 16) & 0xFF) < 230,
           "bar2 background is light gray (R channel)");
 
-    // Different x/band_y must be capable of producing a different value
-    // (proves addr math actually varies with input, not stuck at word 0).
-    uint32_t last = sample(d, 501, 57);
-    CHECK(true, "no crash reading the last valid address"); (void)last;
+    // Row 2 of bar 1 crosses the "DOWN" label text -- at least one pixel
+    // in that row must differ from the plain background gray (bg1),
+    // proving the ROM holds real image content (text), not a solid fill,
+    // and that addr math varies across x (a truncation bug that wraps
+    // every x to the same word would make the whole row uniform).
+    bool row_has_variation = false;
+    for (int px = 0; px < 502; px++) {
+        if (sample(d, px, 2) != bg1) { row_has_variation = true; break; }
+    }
+    CHECK(row_has_variation, "bar1 row 2 contains at least one non-background pixel (label text)");
 
     if (g_failures) { std::printf("FAILED: %d check(s)\n", g_failures); return 1; }
     std::printf("PASS: label_rom_tb\n");
