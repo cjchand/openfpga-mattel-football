@@ -34,7 +34,7 @@ bitstream:
 		$(QUARTUS_IMAGE) quartus_sh --flow compile $(QPF)
 
 RBF        ?= src/fpga/output_files/ap_core.rbf
-RBF_R_DEST ?= dist/Cores/Developer.Core Template/bitstream.rbf_r
+RBF_R_DEST ?= dist/Cores/cjchand.Mattel Football/bitstream.rbf_r
 
 .PHONY: package
 package:
