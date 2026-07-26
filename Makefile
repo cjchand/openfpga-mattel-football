@@ -7,7 +7,7 @@ VERILATOR ?= verilator
 VFLAGS    := -Wall --cc --exe --build -j 0
 
 # One entry per testbench: <name> builds sim/<name>_tb.cpp against src/<name>.v
-SIM_TESTS := b6100_cpu led_capture video_renderer ce_gen rom_loader audio_i2s label_rom
+SIM_TESTS := b6100_cpu led_capture video_renderer ce_gen rom_loader audio_i2s label_rom field_rom
 
 .PHONY: sim clean sim-python
 sim: $(SIM_TESTS:%=sim-%) sim-python
@@ -17,22 +17,27 @@ sim-%:
 		-o $*_tb sim/$*_tb.cpp src/$*.v
 	sim/obj_dir_$*/$*_tb
 
-# label_rom.v's $readmemh calls use bare filenames ("label_bitmap.mem" /
-# "label_palette.mem"), which Verilator resolves relative to the process's
+# label_rom.v/field_rom.v's $readmemh calls use bare filenames (e.g.
+# "label_bitmap.mem"), which Verilator resolves relative to the process's
 # working directory at run time (not compile time) -- so, unlike the other
-# sim-% targets, the built binary must be run with cwd set to src/. This
-# explicit rule overrides the sim-% pattern rule above for label_rom only.
+# sim-% targets, the built binary must be run with cwd set to src/. These
+# explicit rules override the sim-% pattern rule above.
 sim-label_rom:
 	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_label_rom --top-module label_rom \
 		-o label_rom_tb sim/label_rom_tb.cpp src/label_rom.v
 	cd src && ../sim/obj_dir_label_rom/label_rom_tb
 
-# video_renderer.v instantiates label_rom (which needs the same cwd=src/
-# $readmemh handling as sim-label_rom above), so it also needs an explicit
-# override: extra source file, and run from src/.
+sim-field_rom:
+	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_field_rom --top-module field_rom \
+		-o field_rom_tb sim/field_rom_tb.cpp src/field_rom.v
+	cd src && ../sim/obj_dir_field_rom/field_rom_tb
+
+# video_renderer.v instantiates label_rom and field_rom (both need the same
+# cwd=src/ $readmemh handling as above), so it also needs an explicit
+# override: extra source files, and run from src/.
 sim-video_renderer:
 	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_video_renderer --top-module video_renderer \
-		-o video_renderer_tb sim/video_renderer_tb.cpp src/video_renderer.v src/label_rom.v
+		-o video_renderer_tb sim/video_renderer_tb.cpp src/video_renderer.v src/label_rom.v src/field_rom.v
 	cd src && ../sim/obj_dir_video_renderer/video_renderer_tb
 
 sim-python:
@@ -75,7 +80,7 @@ smoke: tracegen
 frames:
 	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_frames --top-module football_system \
 		-o football_frames sim/football_system_tb.cpp \
-		src/football_system.v src/b6100_cpu.v src/led_capture.v src/video_renderer.v src/label_rom.v
+		src/football_system.v src/b6100_cpu.v src/led_capture.v src/video_renderer.v src/label_rom.v src/field_rom.v
 	# The dash field (ball movement) and the digit readout (down/field
 	# position/yards to go) are mutually-exclusive display modes on real
 	# hardware -- confirmed against MAME (mfootb, hh_rw5000.cpp): holding

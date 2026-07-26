@@ -2,7 +2,7 @@
     "core": {
         "magic": "APF_VER_1",
         "metadata": {
-            "platform_ids": ["ex_platform"],
+            "platform_ids": ["mattel_football"],
             "shortname": "Mattel Football",
             "description": "Mattel Electronic Football (1977) for the Analogue Pocket.",
             "author": "cjchand",

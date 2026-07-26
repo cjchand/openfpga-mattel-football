@@ -5,41 +5,48 @@ Rockwell B6100 CPU running the real ROM (user-supplied, not included).
 
 Design spec: `docs/superpowers/specs/2026-07-25-mattel-football-core-design.md`
 
-## Prerequisites
+## Installing on your Analogue Pocket
+
+No building required — this repo ships a ready-to-use core in the `dist/`
+folder. All you need is the repo and your own dump of the game ROM.
+
+1. **Get this repo onto your computer.** Either `git clone` it, or on GitHub
+   click the green "Code" button → "Download ZIP" and unzip it.
+2. **Copy `dist/` onto your Pocket's SD card.** Open the `dist` folder from
+   this repo, and copy everything inside it (the `Cores` and `Platforms`
+   folders) onto the root of your Pocket's SD card, merging into the SD
+   card's existing `Cores/` and `Platforms/` folders (say "merge"/"yes to
+   all" if your OS asks — don't replace the whole folder). Don't rename
+   anything; the core's folder must stay named exactly
+   `Cores/cjchand.Mattel Football` or the Pocket won't boot it.
+3. **Add the game ROM yourself — it's not included.** This repo can't ship
+   the original Mattel Electronic Football ROM (it's copyrighted), so
+   you'll need to supply your own dump: 896 bytes, CRC32 `5b27620f`, the
+   `b6100eb` file from the MAME `mfootb` romset. Rename it to `mfootb.bin`
+   and place it on the SD card at:
+   `Assets/mattel_football/common/mfootb.bin`
+   (create the `Assets`, `mattel_football`, and `common` folders if they
+   don't already exist).
+4. **Eject the SD card, put it back in your Pocket, and boot the core**
+   from the core list (it'll show up under the "Mattel Football" platform,
+   category Handheld). Controls: D-pad Up/Down/Right move, A kicks, Start
+   shows score/time, Select shows down-and-distance. In the core's options
+   menu (long-press the Pocket's menu button while the core is running):
+   "Overlay" toggles the bezel artwork on/off, and "PRO 2 (Hard)" switches
+   the game's difficulty (unchecked is PRO 1, the default).
+
+## Building it yourself (optional)
+
+Only needed if you want to modify the core. Prerequisites:
 
 - macOS: `brew install verilator` (simulation)
 - Docker Desktop with Rosetta x86 emulation enabled (Quartus synthesis)
 
-## Building
+Commands:
 
 - `make sim` — run all simulation testbenches
 - `make bitstream` — compile the FPGA bitstream (Docker, slow)
-- `make package` — stage a Pocket-installable core under `dist/`
+- `make package` — stage the rebuilt core into `dist/`
 
-## Game ROM
-
-Simulation and the core itself require the original Mattel Football
-ROM — 896 bytes, CRC32 5b27620f (the `b6100eb` file from the MAME `mfootb`
-romset). It is copyrighted and never distributed with this repository. Place
-it at `sim/roms/mfootb.bin` (gitignored) for `make smoke` / `make golden` /
-`make frames`.
-
-## Running on your Analogue Pocket
-
-1. Build and stage the core: `make bitstream && make package`. This
-   produces `dist/Cores/cjchand.Mattel Football/` and `dist/platforms/`.
-2. Copy the contents of `dist/` onto your Pocket's SD card root, merging
-   into the existing `Cores/` and `Platforms/` folders (the folder is
-   still named `Cores/cjchand.Mattel Football` — don't rename it, the
-   core won't boot if it doesn't match `core.json`'s declared identity).
-3. Supply your own dump of the ROM (see "Game ROM" above) at
-   `Assets/ex_platform/common/mfootb.bin` on the SD card, creating those
-   folders if they don't already exist.
-4. Boot the core from the Pocket's core list. Controls: D-pad Up/Down/Right
-   move, A kicks, Start shows score/time, Select shows down-and-distance.
-   The "Presentation" setting (in the core's options menu) toggles the
-   bezel artwork on/off.
-
-If you'd rather not build it yourself, ask whoever shared this repo with
-you for a copy of `dist/` (steps 2-4 above still apply) — the ROM is never
-included either way.
+Simulation (`make smoke` / `make golden` / `make frames`) also needs the ROM,
+at `sim/roms/mfootb.bin` (gitignored) — see step 3 above for how to get it.

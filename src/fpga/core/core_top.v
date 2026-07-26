@@ -663,21 +663,47 @@ end
     // Pocket mapping per the design spec's Controls table: D-pad Up/Down/
     // Right -> Up/Down/Forward, A -> Kick, Start -> Score, Select -> Status.
     wire [3:0] football_kb  = { cont1_key[4], cont1_key[0], cont1_key[3], cont1_key[1] }; // {Kick,Up,Forward,Down}
-    wire [3:0] football_din = { 1'b0, cont1_key[14], cont1_key[15], 1'b1 }; // {FactoryTest=0,Status,Score,Difficulty=PRO1}
+    wire [3:0] football_din = { 1'b0, cont1_key[14], cont1_key[15], ~difficulty_pro2 }; // {FactoryTest=0,Status,Score,Difficulty}
 
-    // "Presentation" settings toggle (interact.json), read through the
-    // core-template's existing but previously-unused datatable mechanism
-    // (core_bridge_cmd.v's mf_datatable, port A -- port B is driven by the
-    // host in response to bridge reads/writes at the matching address).
-    // Fixed at datatable word 0 (bridge address 0xF8002000, low 12 bits
-    // all zero -> word index 0 after the >>2 in core_bridge_cmd.v).
-    assign datatable_addr = 10'd0;
+    // "Overlay" and "Difficulty" settings toggles (interact.json), read
+    // through the core-template's existing but previously-unused datatable
+    // mechanism (core_bridge_cmd.v's mf_datatable, port A -- port B is
+    // driven by the host in response to bridge reads/writes at the matching
+    // address). Overlay lives at word 0 (bridge address 0xF8002000),
+    // Difficulty at word 1 (0xF8002004, low 12 bits -> word index via the
+    // >>2 in core_bridge_cmd.v). Port A has a single read address, so it's
+    // scanned between the two words, holding each for 8 clk_74a cycles.
+    // datatable_q lags datatable_addr by the RAM's read latency (at least
+    // one registered cycle, outdata_reg_a=CLOCK0): latch ONLY on the last
+    // cycle of each 8-cycle dwell (scan[2:0]==7), never on every cycle of
+    // the dwell. Latching every cycle (an earlier version of this code did)
+    // briefly writes the *other* word's still-in-flight data into the wrong
+    // register for the first cycle(s) after every address switch -- a real,
+    // visible glitch each time the two words' values differ, not something
+    // that quietly self-heals just because a later cycle overwrites it.
+    reg [3:0] datatable_scan;
+always @(posedge clk_74a) begin
+    if(~reset_n) datatable_scan <= 4'd0;
+    else         datatable_scan <= datatable_scan + 4'd1;
+end
+
+    assign datatable_addr = { 9'd0, datatable_scan[3] };
     assign datatable_wren = 1'b0;
     assign datatable_data = 32'd0;
-    wire   bezel_enable_74a = datatable_q[0];
+
+    reg    bezel_enable_74a;
+    reg    difficulty_74a;
+always @(posedge clk_74a) begin
+    if (datatable_scan[2:0] == 3'b111) begin
+        if(~datatable_scan[3]) bezel_enable_74a <= datatable_q[0];
+        else                   difficulty_74a   <= datatable_q[0];
+    end
+end
 
     wire   bezel_enable;
+    wire   difficulty_pro2;
 synch_2 bezel_enable_sync ( bezel_enable_74a, bezel_enable, clk_core_12288, , );
+synch_2 difficulty_sync ( difficulty_74a, difficulty_pro2, clk_core_12288, , );
 
     wire [23:0] football_rgb;
     wire        football_spk;

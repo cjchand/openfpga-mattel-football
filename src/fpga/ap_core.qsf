@@ -744,6 +744,7 @@ set_global_assignment -name VERILOG_FILE ../b6100_cpu.v
 set_global_assignment -name VERILOG_FILE ../led_capture.v
 set_global_assignment -name VERILOG_FILE ../video_renderer.v
 set_global_assignment -name VERILOG_FILE ../label_rom.v
+set_global_assignment -name VERILOG_FILE ../field_rom.v
 # label_rom.v's $readmemh calls use bare filenames ("label_bitmap.mem" /
 # "label_palette.mem", both at src/) with no directory prefix. quartus_map's
 # working directory is src/fpga/ (see Makefile's `bitstream` target), one

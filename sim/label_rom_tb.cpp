@@ -22,25 +22,26 @@ int main(int argc, char** argv) {
     Verilated::commandArgs(argc, argv);
     Vlabel_rom d;
 
-    // x=50, row 2 of bar 1: inside the gray background field, clear of the
-    // ~24px black frame border that runs down both edges of the bar (x<24
-    // and x>=376 at the 400-wide canvas) and clear of any glyph -- verified
-    // directly against both the source PNG and the generated .mem files
-    // before writing this check. Must be the label bar's background gray,
-    // not black or green (proves the ROM is being read, not returning
-    // garbage/zero).
+    // x=50, row 2 of bar 1 (bar1 is now band_y 0-9, downscaled from 20px
+    // to 10px tall -- see tools/gen_bezel_bitmaps.py's BAR_OUT_H): inside
+    // the gray background field, clear of the ~24px gray-painted margin
+    // that runs down both edges of the bar (x<28 at the 400-wide canvas)
+    // and clear of any glyph -- verified directly against the generated
+    // .mem file before writing this check. Must be the label bar's
+    // background gray, not black or green (proves the ROM is being read,
+    // not returning garbage/zero).
     uint32_t bg1 = sample(d, 50, 2);
     CHECK(((bg1 >> 16) & 0xFF) > 150 && ((bg1 >> 16) & 0xFF) < 230,
           "bar1 background is light gray (R channel)");
     CHECK(((bg1 >> 16) & 0xFF) == (bg1 & 0xFF), "bar1 background is neutral gray (R==B)");
 
-    // Same x, first row of bar 2 (band_y=29 = overlay y=103), same
-    // background-gray expectation.
-    uint32_t bg2 = sample(d, 50, 29);
+    // Same x, row 11 of bar 2 (band_y 10-19), same background-gray
+    // expectation.
+    uint32_t bg2 = sample(d, 50, 11);
     CHECK(((bg2 >> 16) & 0xFF) > 150 && ((bg2 >> 16) & 0xFF) < 230,
           "bar2 background is light gray (R channel)");
 
-    // Row 15 of bar 1 crosses the "DOWN"/"FIELD POSITION"/"YARDS TO GO"
+    // Row 3 of bar 1 crosses the "DOWN"/"FIELD POSITION"/"YARDS TO GO"
     // label text -- scanning only the interior gray field (x=30..369,
     // clear of the black frame border on both edges) at least one pixel
     // must differ from the plain background gray (bg1), proving the ROM
@@ -51,9 +52,9 @@ int main(int argc, char** argv) {
     // border-vs-background check.
     bool row_has_variation = false;
     for (int px = 30; px < 370; px++) {
-        if (sample(d, px, 15) != bg1) { row_has_variation = true; break; }
+        if (sample(d, px, 3) != bg1) { row_has_variation = true; break; }
     }
-    CHECK(row_has_variation, "bar1 row 15 contains at least one non-background pixel (label text)");
+    CHECK(row_has_variation, "bar1 row 3 contains at least one non-background pixel (label text)");
 
     if (g_failures) { std::printf("FAILED: %d check(s)\n", g_failures); return 1; }
     std::printf("PASS: label_rom_tb\n");

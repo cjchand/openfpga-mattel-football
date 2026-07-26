@@ -117,15 +117,14 @@ int main(int argc, char** argv) {
             // otherwise make these checks pass regardless of input.
             // Geometry below mirrors src/video_renderer.v's dash_x()/
             // DASH_Y0..2/digit_x()/DIGIT_Y (bezel-overlay layout, 400-wide
-            // canvas -- reverted from an initial 502-wide attempt that left
-            // zero horizontal front porch on real hardware; see
-            // docs/verification.md).
+            // letterboxed canvas -- see docs/verification.md for the
+            // bring-up history behind these numbers).
             bool post_settle = tick >= settle;
             int frame_bright_col = -1;
             for (int col = 0; col < 9; col++)
                 for (int row = 0; row < 3; row++) {
-                    int cy = (row == 0) ? 201 : (row == 1) ? 267 : 333;
-                    d.px_x = 16 + 44 * col + 8; d.px_y = cy + 3; d.eval();
+                    int cy = (row == 0) ? 159 : (row == 1) ? 195 : 231;
+                    d.px_x = 41 + 38 * col + 8; d.px_y = cy + 3; d.eval();
                     if (post_settle && d.px_rgb == 0xFF2020) {
                         saw_bright_dash = true;
                         if (frame_bright_col < 0) frame_bright_col = col;
@@ -133,9 +132,9 @@ int main(int argc, char** argv) {
                     if (post_settle && d.px_rgb == 0x801414) saw_dim_dash = true;
                 }
             if (post_settle) dash_cols.push_back(frame_bright_col);
-            static const int dx[7] = {50, 91, 152, 187, 222, 285, 326};
+            static const int dx[7] = {58, 99, 152, 187, 222, 277, 318};
             for (int dg = 0; dg < 7; dg++) {
-                d.px_x = dx[dg] + 12; d.px_y = 51 + 2; d.eval();  // segment a
+                d.px_x = dx[dg] + 12; d.px_y = 73; d.eval();  // segment a
                 if (post_settle && d.px_rgb != 0x1A0505 && d.px_rgb != 0x000000) saw_digit = true;
             }
             frames++;
