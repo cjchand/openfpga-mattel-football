@@ -74,6 +74,7 @@ int main(int argc, char** argv) {
     Vfootball_system d;
     d.ce = 1; d.kb = 0; d.din = din & 0x1; d.score_btn = 0;
     d.px_x = 0; d.px_y = 0;
+    d.bezel_enable = 1;
     d.rst_n = 0; d.clk = 0; d.eval();
     d.clk = 1; d.eval(); d.clk = 0; d.eval();
     d.rst_n = 1;
@@ -95,17 +96,17 @@ int main(int argc, char** argv) {
         tick++;
 
         if (d.window_tick) {
-            std::vector<uint8_t> buf(400 * 360 * 3);
+            std::vector<uint8_t> buf(502 * 360 * 3);
             for (int y = 0; y < 360; y++)
-                for (int x = 0; x < 400; x++) {
+                for (int x = 0; x < 502; x++) {
                     d.px_x = x; d.px_y = y; d.eval();
                     uint32_t p = d.px_rgb;
-                    size_t i = ((size_t)y * 400 + x) * 3;
+                    size_t i = ((size_t)y * 502 + x) * 3;
                     buf[i] = p >> 16; buf[i+1] = p >> 8; buf[i+2] = p;
                 }
             char path[512];
             std::snprintf(path, sizeof path, "%s/frame_%03d.ppm", outdir, frames);
-            if (!write_ppm(path, 400, 360, buf.data())) {
+            if (!write_ppm(path, 502, 360, buf.data())) {
                 std::fprintf(stderr, "failed to write frame '%s'\n", path);
                 return 2;
             }
@@ -114,12 +115,14 @@ int main(int argc, char** argv) {
             // frames captured after the input settle point -- the pre-settle
             // boot display already lights both brightness classes and would
             // otherwise make these checks pass regardless of input.
+            // Geometry below mirrors src/video_renderer.v's dash_x()/
+            // DASH_Y0..2/digit_x()/DIGIT_Y (bezel-overlay layout).
             bool post_settle = tick >= settle;
             int frame_bright_col = -1;
             for (int col = 0; col < 9; col++)
                 for (int row = 0; row < 3; row++) {
-                    int cy = (row == 0) ? 163 : (row == 1) ? 223 : 283;
-                    d.px_x = 30 + 38 * col + 10; d.px_y = cy; d.eval();
+                    int cy = (row == 0) ? 201 : (row == 1) ? 267 : 333;
+                    d.px_x = 4 + 55 * col + 10; d.px_y = cy + 3; d.eval();
                     if (post_settle && d.px_rgb == 0xFF2020) {
                         saw_bright_dash = true;
                         if (frame_bright_col < 0) frame_bright_col = col;
@@ -127,9 +130,9 @@ int main(int argc, char** argv) {
                     if (post_settle && d.px_rgb == 0x801414) saw_dim_dash = true;
                 }
             if (post_settle) dash_cols.push_back(frame_bright_col);
-            static const int dx[7] = {40, 72, 136, 168, 200, 264, 296};
+            static const int dx[7] = {66, 116, 196, 239, 282, 361, 411};
             for (int dg = 0; dg < 7; dg++) {
-                d.px_x = dx[dg] + 12; d.px_y = 40 + 2; d.eval();  // segment a
+                d.px_x = dx[dg] + 12; d.px_y = 51 + 2; d.eval();  // segment a
                 if (post_settle && d.px_rgb != 0x1A0505 && d.px_rgb != 0x000000) saw_digit = true;
             }
             frames++;

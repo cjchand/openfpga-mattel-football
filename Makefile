@@ -27,6 +27,14 @@ sim-label_rom:
 		-o label_rom_tb sim/label_rom_tb.cpp src/label_rom.v
 	cd src && ../sim/obj_dir_label_rom/label_rom_tb
 
+# video_renderer.v instantiates label_rom (which needs the same cwd=src/
+# $readmemh handling as sim-label_rom above), so it also needs an explicit
+# override: extra source file, and run from src/.
+sim-video_renderer:
+	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_video_renderer --top-module video_renderer \
+		-o video_renderer_tb sim/video_renderer_tb.cpp src/video_renderer.v src/label_rom.v
+	cd src && ../sim/obj_dir_video_renderer/video_renderer_tb
+
 sim-python:
 	python3 sim/test_reverse_rbf.py
 	python3 sim/test_trace_diff.py
@@ -67,7 +75,7 @@ smoke: tracegen
 frames:
 	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_frames --top-module football_system \
 		-o football_frames sim/football_system_tb.cpp \
-		src/football_system.v src/b6100_cpu.v src/led_capture.v src/video_renderer.v
+		src/football_system.v src/b6100_cpu.v src/led_capture.v src/video_renderer.v src/label_rom.v
 	# The dash field (ball movement) and the digit readout (down/field
 	# position/yards to go) are mutually-exclusive display modes on real
 	# hardware -- confirmed against MAME (mfootb, hh_rw5000.cpp): holding
@@ -78,8 +86,14 @@ frames:
 	# "status" mode (kb=0, din=5 = difficulty + Status, asserting only the
 	# digit readout) for a short digit-readout capture. Both must exit 0.
 	mkdir -p sim/frames/game sim/frames/status
-	sim/obj_dir_frames/football_frames $(ROM) 180 2 1 1000 sim/frames/game game && \
-	sim/obj_dir_frames/football_frames $(ROM) 60 0 5 1000 sim/frames/status status
+	# football_system.v now instantiates video_renderer, which instantiates
+	# label_rom -- its $$readmemh calls resolve relative to cwd at run time
+	# (see Makefile's sim-label_rom/sim-video_renderer comments), so this
+	# binary must also run with cwd=src/; use absolute paths for the ROM
+	# and outdirs since they're no longer relative to the repo root.
+	cd src && \
+	../sim/obj_dir_frames/football_frames $(CURDIR)/$(ROM) 180 2 1 1000 $(CURDIR)/sim/frames/game game && \
+	../sim/obj_dir_frames/football_frames $(CURDIR)/$(ROM) 60 0 5 1000 $(CURDIR)/sim/frames/status status
 
 MAME ?= mame
 GOLDEN_N ?= 2000000

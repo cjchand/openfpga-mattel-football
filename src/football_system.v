@@ -14,7 +14,8 @@ module football_system (
     input  wire [8:0]  px_y,
     output wire [23:0] px_rgb,
     output wire        spk,
-    output wire        window_tick
+    output wire        window_tick,
+    input  wire        bezel_enable
 );
     wire [8:0]   str;
     wire [9:0]   seg;
@@ -38,6 +39,7 @@ module football_system (
     );
 
     video_renderer rend (
-        .x(px_x), .y(px_y), .levels(levels), .rgb(px_rgb)
+        .x(px_x), .y(px_y), .levels(levels),
+        .bezel_enable(bezel_enable), .rgb(px_rgb)
     );
 endmodule
