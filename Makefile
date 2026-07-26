@@ -7,7 +7,7 @@ VERILATOR ?= verilator
 VFLAGS    := -Wall --cc --exe --build -j 0
 
 # One entry per testbench: <name> builds sim/<name>_tb.cpp against src/<name>.v
-SIM_TESTS := b6100_cpu led_capture video_renderer ce_gen rom_loader audio_i2s
+SIM_TESTS := b6100_cpu led_capture video_renderer ce_gen rom_loader audio_i2s label_rom
 
 .PHONY: sim clean sim-python
 sim: $(SIM_TESTS:%=sim-%) sim-python
@@ -16,6 +16,16 @@ sim-%:
 	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_$* --top-module $* \
 		-o $*_tb sim/$*_tb.cpp src/$*.v
 	sim/obj_dir_$*/$*_tb
+
+# label_rom.v's $readmemh calls use bare filenames ("label_bitmap.mem" /
+# "label_palette.mem"), which Verilator resolves relative to the process's
+# working directory at run time (not compile time) -- so, unlike the other
+# sim-% targets, the built binary must be run with cwd set to src/. This
+# explicit rule overrides the sim-% pattern rule above for label_rom only.
+sim-label_rom:
+	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_label_rom --top-module label_rom \
+		-o label_rom_tb sim/label_rom_tb.cpp src/label_rom.v
+	cd src && ../sim/obj_dir_label_rom/label_rom_tb
 
 sim-python:
 	python3 sim/test_reverse_rbf.py
