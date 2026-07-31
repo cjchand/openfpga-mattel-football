@@ -43,6 +43,7 @@ sim-video_renderer:
 sim-python:
 	python3 sim/test_reverse_rbf.py
 	python3 sim/test_trace_diff.py
+	python3 sim/test_platform_icon.py
 
 clean:
 	rm -rf sim/obj_dir_*
