@@ -55,3 +55,12 @@ Commands:
 
 Simulation (`make smoke` / `make golden` / `make frames`) also needs the ROM,
 at `sim/roms/mfootb.bin` (gitignored) — see step 3 above for how to get it.
+
+## License
+
+This project's own code (RTL, tooling, docs) is MIT-licensed — see
+`LICENSE`. It vendors `open-fpga/core-template`, which ships no license of
+its own and is governed by Analogue's openFPGA developer program terms
+instead (see `docs/template-notes.md`). The Mattel Electronic Football ROM
+is not included and is not covered by this license — you must supply your
+own legally obtained dump.
