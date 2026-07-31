@@ -36,11 +36,23 @@ module video_renderer (
     // 1px at x=0/x=399 -- see the mask below), centered with a 40px gray
     // margin on each side. Window 2 sits exactly where it always did, so
     // it didn't need to move.
+    //
+    // Digit *pitch* within a window: a close-up photo of the real device's
+    // 9-position LED strip (bug report, 2026-07-26) shows all 9 physical
+    // dome positions evenly spaced at one constant pitch -- only 7 of the
+    // 9 are wired as actual digits, with the 3rd and 7th positions left
+    // unpopulated as the gaps between the 3 windows. It's one continuous
+    // comb, not three independently-spaced clusters. Window 2's pitch
+    // (35px, digits already validated against the photo) is the anchor;
+    // window 1 and window 3's digits now use that same 35px pitch instead
+    // of being stretched to evenly fill their own window's box width,
+    // leaving extra gray margin on the side nearest each window's own
+    // blank comb slot (adjacent to window 2).
     function [8:0] digit_x(input [2:0] d);
         case (d)
-            3'd0: digit_x = 9'd58;   3'd1: digit_x = 9'd99;    // window 1
+            3'd0: digit_x = 9'd47;   3'd1: digit_x = 9'd82;    // window 1
             3'd2: digit_x = 9'd152;  3'd3: digit_x = 9'd187;  3'd4: digit_x = 9'd222; // window 2
-            3'd5: digit_x = 9'd277;  3'd6: digit_x = 9'd318;   // window 3
+            3'd5: digit_x = 9'd292;  3'd6: digit_x = 9'd327;   // window 3
             default: digit_x = 9'd0;
         endcase
     endfunction

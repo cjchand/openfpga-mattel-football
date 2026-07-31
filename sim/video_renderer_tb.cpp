@@ -129,10 +129,10 @@ static void test_decimal_point() {
 
 static void test_ghost_level_still_renders_ghost_color() {
     // Unchanged behavior check: level 0 inside a digit segment must still
-    // be C_GHOST (0x1A0505). digit 0 (x0=58, y0=DIGIT_Y), segment a rect:
-    // x[67,73), y[DIGIT_Y,DIGIT_Y+1) -- pick a point inside it.
+    // be C_GHOST (0x1A0505). digit 0 (x0=47, y0=DIGIT_Y), segment a rect:
+    // x[56,62), y[DIGIT_Y,DIGIT_Y+1) -- pick a point inside it.
     Rend r; r.clear_levels();
-    CHECK(r.px(68, DIGIT_Y) == GHOST, "level-0 segment area still shows the ghost color, at its new position");
+    CHECK(r.px(57, DIGIT_Y) == GHOST, "level-0 segment area still shows the ghost color, at its new position");
 }
 
 static void test_bezel_disabled_is_plain_black_outside_leds() {
