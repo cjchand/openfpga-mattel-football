@@ -45,6 +45,29 @@ folder. All you need is the repo and your own dump of the game ROM.
    are on the left and movement on the right, matching the original
    device's layout.
 
+## Controls
+
+Given this is for the Pocket, movement defaults to the D-pad. There is an
+option for "Original Controls" to place ST/SC/K on the D-pad and use the 
+face buttons for control, just like the original hardware.
+
+The ST and SC buttons are also mapped to the Select and Start buttons.
+
+> Note that both left/right on the D-pad or the left/right face buttons
+  both will move the player
+
+## Gameplay
+
+For the most part, the game plays as you remember it:
+
+* Use the movement buttons to run forward (and only forward, backwards came
+  in Football II) and up/down, avoiding the opposing players
+* Press the SC or ST buttons after being tackled to set up for the next play
+* Kick on 4th down to punt or attempt a field goal when you feel you are in
+  range
+* If you score or punt, play is switched to the other team and you go the
+  opposite direction
+
 ## Building it yourself (optional)
 
 Only needed if you want to modify the core. Prerequisites:
