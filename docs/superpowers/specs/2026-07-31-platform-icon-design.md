@@ -17,11 +17,18 @@ packaging/branding.
   `/Volumes/Pocket/Platforms/_images/`) against `alphamission.png`
   (521×165), a real core's source image found alongside its `.bin` on the
   same card.
-- 2 bytes/pixel (171,930 / 521 / 165 = 2). Exact channel packing (RGB565 vs.
-  other 16bpp layouts, byte order) is not yet confirmed — implementation
-  will decode a real reference `.bin`, compare against its known-good `.png`
-  pixel-for-pixel, and only proceed once the encoding is verified to
-  round-trip correctly.
+- **Encoding confirmed** by decoding a real reference file
+  (`/Volumes/Pocket/Platforms/_images/alphamission.bin`) with various
+  candidate formats and visually matching the result against its
+  known-good `.png` counterpart: the `.bin` is stored **portrait**
+  (165 wide × 521 tall — the Pocket panel's native orientation, not the
+  521×165 "landscape" aspect a human would compose art in), row-major,
+  2 bytes/pixel **little-endian**, low byte = 8-bit grayscale value
+  (0-255), high byte always `0x00`. Art should be authored/reviewed in
+  the landscape 521×165 orientation (matching how the icon actually
+  reads on-screen) and rotated 90° for storage — confirmed as an exact,
+  lossless `Image.transpose()` operation (no interpolation), verified by
+  round-tripping the reference file back to its original bytes.
 - **Grayscale only.** Sampled two real reference images
   (`alphamission.png`, `amstrad.png`) — every pixel has R=G=B (one stray
   anti-aliased pixel in one image, otherwise exact). The Pocket evidently
