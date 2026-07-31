@@ -1,5 +1,10 @@
 # Mattel Football — Analogue Pocket openFPGA core
 
+> Note: As shown in the contributors section, Claude was used to create
+> this project - in fact, it wrote the whole thing. So, apologies in
+> advance for any norms or standards violated. We're both new to
+> OpenFPGA development :)
+
 Recreates the original 1977 Mattel Electronic Football by emulating its
 Rockwell B6100 CPU running the real ROM (user-supplied, not included).
 
