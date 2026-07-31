@@ -660,50 +660,101 @@ end
     // kb[3:0] bit order per MAME's mfootb IN.0 port (hh_rw5000.cpp):
     // bit0=Down, bit1=Forward, bit2=Up, bit3=Kick. din[3:0] per IN.1:
     // bit0=Difficulty(1=PRO1), bit1=Score, bit2=Status, bit3=FactoryTest.
-    // Pocket mapping per the design spec's Controls table: D-pad Up/Down/
-    // Right -> Up/Down/Forward, A -> Kick, Start -> Score, Select -> Status.
-    wire [3:0] football_kb  = { cont1_key[4], cont1_key[0], cont1_key[3], cont1_key[1] }; // {Kick,Up,Forward,Down}
-    wire [3:0] football_din = { 1'b0, cont1_key[14], cont1_key[15], ~difficulty_pro2 }; // {FactoryTest=0,Status,Score,Difficulty}
+    //
+    // Two 4-way physical clusters feed two logical roles: the D-pad
+    // (up/down/left/right) and the face-button diamond (X=top, Y=left,
+    // A=right, B=bottom). Each cluster can serve as either the "movement"
+    // role (Up, Down, Forward) or the "action" role (Kick, Score(ST),
+    // Status(SC)), using the same top/bottom->primary and left+right->
+    // combined pattern either way: vertical position -> Up/Down (or
+    // ST/SC), left OR right -> Forward (or Kick). The "Original Controls"
+    // setting picks which physical cluster plays which role, so players
+    // can match the original device's layout (buttons on the left,
+    // movement on the right) instead of the Pocket's default (D-pad
+    // left, face buttons right). Start/Select always also trigger
+    // Score/Status regardless of the swap, since they're dedicated
+    // buttons outside either 4-way cluster.
+    wire dpad_up    = cont1_key[0];
+    wire dpad_down  = cont1_key[1];
+    wire dpad_left  = cont1_key[2];
+    wire dpad_right = cont1_key[3];
+    wire face_a     = cont1_key[4]; // right
+    wire face_b     = cont1_key[5]; // bottom
+    wire face_x     = cont1_key[6]; // top
+    wire face_y     = cont1_key[7]; // left
 
-    // "Overlay" and "Difficulty" settings toggles (interact.json), read
-    // through the core-template's existing but previously-unused datatable
-    // mechanism (core_bridge_cmd.v's mf_datatable, port A -- port B is
-    // driven by the host in response to bridge reads/writes at the matching
-    // address). Overlay lives at word 0 (bridge address 0xF8002000),
-    // Difficulty at word 1 (0xF8002004, low 12 bits -> word index via the
-    // >>2 in core_bridge_cmd.v). Port A has a single read address, so it's
-    // scanned between the two words, holding each for 8 clk_74a cycles.
-    // datatable_q lags datatable_addr by the RAM's read latency (at least
-    // one registered cycle, outdata_reg_a=CLOCK0): latch ONLY on the last
-    // cycle of each 8-cycle dwell (scan[2:0]==7), never on every cycle of
-    // the dwell. Latching every cycle (an earlier version of this code did)
-    // briefly writes the *other* word's still-in-flight data into the wrong
-    // register for the first cycle(s) after every address switch -- a real,
-    // visible glitch each time the two words' values differ, not something
-    // that quietly self-heals just because a later cycle overwrites it.
-    reg [3:0] datatable_scan;
+    wire dpad_move_up   = dpad_up;
+    wire dpad_move_down = dpad_down;
+    wire dpad_move_fwd  = dpad_left | dpad_right;
+    wire dpad_act_st    = dpad_up;
+    wire dpad_act_sc    = dpad_down;
+    wire dpad_act_kick  = dpad_left | dpad_right;
+
+    wire face_move_up   = face_x;
+    wire face_move_down = face_b;
+    wire face_move_fwd  = face_y | face_a;
+    wire face_act_st    = face_x;
+    wire face_act_sc    = face_b;
+    wire face_act_kick  = face_y | face_a;
+
+    wire kb_up      = swap_controls ? face_move_up   : dpad_move_up;
+    wire kb_down    = swap_controls ? face_move_down : dpad_move_down;
+    wire kb_forward = swap_controls ? face_move_fwd  : dpad_move_fwd;
+    wire kb_kick    = swap_controls ? dpad_act_kick  : face_act_kick;
+    wire din_st     = (swap_controls ? dpad_act_st : face_act_st) | cont1_key[15]; // + Start
+    wire din_sc     = (swap_controls ? dpad_act_sc : face_act_sc) | cont1_key[14]; // + Select
+
+    wire [3:0] football_kb  = { kb_kick, kb_up, kb_forward, kb_down }; // {Kick,Up,Forward,Down}
+    wire [3:0] football_din = { 1'b0, din_sc, din_st, ~difficulty_pro2 }; // {FactoryTest=0,Status,Score,Difficulty}
+
+    // "Overlay", "Difficulty", and "Original Controls" settings toggles
+    // (interact.json), read through the core-template's existing but
+    // previously-unused datatable mechanism (core_bridge_cmd.v's
+    // mf_datatable, port A -- port B is driven by the host in response to
+    // bridge reads/writes at the matching address). Overlay lives at word 0
+    // (bridge address 0xF8002000), Difficulty at word 1 (0xF8002004), Swap
+    // Controls at word 2 (0xF8002008; low 12 bits -> word index via the >>2
+    // in core_bridge_cmd.v). Port A has a single read address, so it's
+    // scanned round-robin between the words (word 3 is unused padding),
+    // holding each for 8 clk_74a cycles. datatable_q lags datatable_addr by
+    // the RAM's read latency (at least one registered cycle,
+    // outdata_reg_a=CLOCK0): latch ONLY on the last cycle of each 8-cycle
+    // dwell (scan[2:0]==7), never on every cycle of the dwell. Latching
+    // every cycle (an earlier version of this code did) briefly writes the
+    // *other* word's still-in-flight data into the wrong register for the
+    // first cycle(s) after every address switch -- a real, visible glitch
+    // each time the two words' values differ, not something that quietly
+    // self-heals just because a later cycle overwrites it.
+    reg [4:0] datatable_scan;
 always @(posedge clk_74a) begin
-    if(~reset_n) datatable_scan <= 4'd0;
-    else         datatable_scan <= datatable_scan + 4'd1;
+    if(~reset_n) datatable_scan <= 5'd0;
+    else         datatable_scan <= datatable_scan + 5'd1;
 end
 
-    assign datatable_addr = { 9'd0, datatable_scan[3] };
+    assign datatable_addr = { 8'd0, datatable_scan[4:3] };
     assign datatable_wren = 1'b0;
     assign datatable_data = 32'd0;
 
     reg    bezel_enable_74a;
     reg    difficulty_74a;
+    reg    swap_controls_74a;
 always @(posedge clk_74a) begin
     if (datatable_scan[2:0] == 3'b111) begin
-        if(~datatable_scan[3]) bezel_enable_74a <= datatable_q[0];
-        else                   difficulty_74a   <= datatable_q[0];
+        case (datatable_scan[4:3])
+            2'd0: bezel_enable_74a  <= datatable_q[0];
+            2'd1: difficulty_74a    <= datatable_q[0];
+            2'd2: swap_controls_74a <= datatable_q[0];
+            default: ; // word 3: unused
+        endcase
     end
 end
 
     wire   bezel_enable;
     wire   difficulty_pro2;
-synch_2 bezel_enable_sync ( bezel_enable_74a, bezel_enable, clk_core_12288, , );
-synch_2 difficulty_sync ( difficulty_74a, difficulty_pro2, clk_core_12288, , );
+    wire   swap_controls;
+synch_2 bezel_enable_sync   ( bezel_enable_74a,   bezel_enable,    clk_core_12288, , );
+synch_2 difficulty_sync     ( difficulty_74a,     difficulty_pro2, clk_core_12288, , );
+synch_2 swap_controls_sync  ( swap_controls_74a,  swap_controls,   clk_core_12288, , );
 
     wire [23:0] football_rgb;
     wire        football_spk;
@@ -715,7 +766,7 @@ football_system fb1 (
     .rom_data   ( football_rom_data ),
     .kb         ( football_kb ),
     .din        ( football_din ),
-    .score_btn  ( cont1_key[15] ),  // Start = Score (same physical button also feeds din[1] above)
+    .score_btn  ( din_st ),  // Score button state (same signal also feeds din[1] above)
     .px_x       ( visible_x[8:0] ),
     .px_y       ( visible_y[8:0] ),
     .px_rgb     ( football_rgb ),

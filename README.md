@@ -29,11 +29,16 @@ folder. All you need is the repo and your own dump of the game ROM.
    don't already exist).
 4. **Eject the SD card, put it back in your Pocket, and boot the core**
    from the core list (it'll show up under the "Mattel Football" platform,
-   category Handheld). Controls: D-pad Up/Down/Right move, A kicks, Start
-   shows score/time, Select shows down-and-distance. In the core's options
-   menu (long-press the Pocket's menu button while the core is running):
-   "Overlay" toggles the bezel artwork on/off, and "PRO 2 (Hard)" switches
-   the game's difficulty (unchecked is PRO 1, the default).
+   category Handheld). Controls: D-pad Up/Down and Left-or-Right move,
+   the left or right face button (Y/A) kicks, the top face button (X)
+   shows score/time, the bottom face button (B) shows down-and-distance
+   (Start/Select also do the score/down-and-distance functions). In the
+   core's options menu (long-press the Pocket's menu button while the core
+   is running): "Overlay" toggles the bezel artwork on/off, "PRO 2 (Hard)"
+   switches the game's difficulty (unchecked is PRO 1, the default), and
+   "Original Controls" swaps the D-pad and face buttons' roles so buttons
+   are on the left and movement on the right, matching the original
+   device's layout.
 
 ## Building it yourself (optional)
 
