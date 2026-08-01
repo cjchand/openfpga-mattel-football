@@ -84,6 +84,13 @@ Commands:
 Simulation (`make smoke` / `make golden` / `make frames`) also needs the ROM,
 at `sim/roms/mfootb.bin` (gitignored) — see step 3 above for how to get it.
 
+## Credits
+
+This project would not exist without prior art detailing the B6100 CPU's architecture and the underlying hardware itself.
+
+* [Sean Riddle's blog post on the full series of early Mattel Electronics games](https://www.seanriddle.com/firstmattelledgames.html)
+* [happppp](https://github.com/happppp)'s work on the [B6100 in the MAME project](https://github.com/mamedev/mame/blob/master/src/devices/cpu/rw5000/b6100.cpp)
+
 ## License
 
 This project's own code (RTL, tooling, docs) is MIT-licensed — see
