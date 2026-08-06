@@ -300,3 +300,163 @@ legibility, digit/dash placement, and no video-timing artifacts, all
 confirmed at the reverted 400-wide canvas. Aspect-ratio letterboxing and
 font-weight refinement were still in progress as of this writing (see
 above) — this section will be updated once that lands.
+
+---
+
+# Display verification: the MAME display-parity gate
+
+The golden-trace gate above proves the CPU matches MAME instruction for
+instruction. It says nothing about what reaches the screen, because
+everything downstream of `str`/`seg` — the duty measurement in
+`led_capture.v` and the level→colour mapping in `video_renderer.v` — is ours,
+not the CPU's. `make display-parity` closes that gap.
+
+Ported from the Football II core's plan (`docs/flicker-port-plan.md` on the
+`docs/flicker-port-plan` branch, written by the agent that built FB2).
+
+## What the display model is
+
+MAME's `mfootb` (`src/mame/handheld/hh_rw5000.cpp`, a Rockwell B6100)
+configures:
+
+```cpp
+PWM_DISPLAY(config, m_display).set_size(9, 11);
+m_display->set_segmask(0x08, 0xff);      // only one digit has a DP
+m_display->set_bri_levels(0.02, 0.2);    // "player led is brighter"
+```
+
+and inherits `pwm_display_device`'s default `set_interpolation(0.5)`. Per
+cell, per 60 Hz frame, `pwm.cpp`'s `frame_tick` does:
+
+```cpp
+double bri = m_bri[y][x] * factor1 + (m_acc[y][x].as_double() / frame_time) * factor0;
+```
+
+with `factor0 = 0.5` — an IIR at alpha = 1/2 — and *then* classifies the
+smoothed value against the two levels. `led_capture.v` mirrors all of it:
+`WINDOW = 1167` ce ticks (280 kHz / 4 instruction rate / 60 Hz = 59.98 Hz),
+thresholds at 2% and 20%, and a per-cell `smooth[]` folded at alpha = 1/2.
+
+Two deliberate deviations, both commented in the RTL:
+
+- **`pwm.cpp`'s cutoff clamp is not modelled.** It clamps `bri` to
+  `4 × 0.2 = 0.8` before storing. With 9 columns multiplexed no cell
+  approaches 80% duty, so the clamp is unreachable.
+- **The `+1` rounding offset** on the IIR is ours, not MAME's (which works
+  in doubles). It makes `smooth == cnt` an exact fixed point, so a cell held
+  at exactly a threshold settles on it instead of creeping one count short
+  forever. `test_steady_state_is_exact` in `sim/led_capture_tb.cpp` is the
+  guard.
+
+## Constants that must not be copied from FB2
+
+FB2's core looks similar and its numbers are all wrong here. Copying them
+produces a display that still looks plausible, which is what makes it
+dangerous.
+
+| Constant | FB2 | FB1 (this core) | Why |
+|---|---|---|---|
+| Window length | 1583 | **1167** | 380 kHz/4 vs 280 kHz/4 |
+| Brightness levels | 0.015 / 0.2 | **0.02 / 0.2** | different `set_bri_levels` |
+| Matrix size | 10 x 11 | **9 x 11** | different `set_size` |
+| Cell count | 110 | **99** | follows from matrix size |
+
+All four are verified by mutation below.
+
+## How the comparison works
+
+`tools/golden/dump_display.lua` runs under MAME and writes one CSV row per
+frame of the 9×11 matrix, read from `pwm_display_device`'s `"y.x"` outputs.
+`sim/display_parity_tb.cpp` writes the same layout from our `levels[]`,
+tapped out of `football_system.v` as `dbg_levels`.
+`tools/golden/display_diff.py` compares them.
+
+The two runs are **not** phase-locked — MAME reclassifies on its own 60 Hz
+timer, we reclassify every 1167 ce ticks (59.98 Hz), and neither starts its
+first window at the same point in the ROM's multiplex loop. Comparing frame
+N to frame N is meaningless. So the differ compares, per cell:
+
+- whether it is steady or changing;
+- if steady, its level;
+- if changing in both, the *set* of levels visited and the fraction of frames
+  spent at each, within `--blink-tol` (default 15 points).
+
+That last clause matters. Exempting every cell that changes in both — the
+obvious shortcut — would exempt exactly the cells the test exists to check:
+on the `fwd` scenario all ten moving dash cells change, including the ball
+carrier.
+
+`DISPLAY_N` defaults to 420 frames rather than something shorter because the
+two captures sit about one frame apart in phase. A window that *ends* inside
+a transient shows one side a step further along the same decay ramp than the
+other; at 180 frames the `fwd` scenario cut exactly into the ball carrier's
+decay and reported a difference that a longer window shows is only that
+offset.
+
+## Results
+
+`make display-parity-all` — **99/99 cells on all four scenarios**
+(idle, fwd, kick, score).
+
+For comparison, FB2's equivalent test matches 109 of 110, its one exception
+being a blinking cell the two runs cannot phase-lock. The share-based blink
+comparison above is what lets this one reach 99/99 rather than needing a
+similar carve-out.
+
+## One real bug found
+
+The `score` scenario initially reported 5 mismatching cells, all on line 7 —
+the decimal point. MAME's `mfootb_state::update_display()` is:
+
+```cpp
+// 4th digit DP is from the SCORE button
+u8 dp = (m_inputs[1]->read() & 2) ? 0x80 : 0;
+m_display->matrix(m_str, (m_seg << 1 & 0x700) | dp | (m_seg & 0x7f));
+```
+
+The DP line is OR'd into **every** strobe column straight from the Score
+button, bypassing the CPU's `seg` outputs entirely. Our RTL models this
+correctly (`led_capture.v` takes `dp_in` from `score_btn`), but the harness
+was driving `din` bit 1 without also driving `score_btn`. They are the same
+physical button.
+
+**This is a live constraint on the APF top level:** whatever wires DIN must
+wire `score_btn` from DIN bit 1, or the decimal point never lights.
+
+## Proving the tests can fail
+
+Every claim above was checked by reintroducing the bug and watching the test
+go red. Note the split — the parity test catches interpolation errors, the
+unit test catches threshold errors, and neither covers the other:
+
+| Mutation | `sim-led_capture` | `display-parity` |
+|---|---|---|
+| alpha = 1 (no interpolation) | FAIL | FAIL (`score` only) |
+| alpha = 1/8 (FB2's old over-smoothing) | FAIL | FAIL (`fwd`, `score`) |
+| truncate instead of `+1` rounding | FAIL | pass |
+| FB2's dim level 0.015 | FAIL | pass |
+| FB2's `WINDOW = 1583` | FAIL | FAIL (`fwd`, `kick`) |
+
+No single scenario catches every mutation, which is why
+`display-parity-all` rather than `display-parity` is the gate. `idle` catches
+none of them on its own; it is kept because it is the attract state the core
+boots into, not because it is load-bearing.
+
+### A trap when running these
+
+Verilator's `--build` skips recompiling when the `.v` file's mtime lands in
+the same second as the previous build — which a scripted mutate/run/restore
+loop does constantly. A "restored" run reported the *previous mutation's*
+failures. Delete `sim/obj_dir_<name>/` between mutations; do not trust a
+mutation result from an incremental build.
+
+## How to re-run
+
+```sh
+make display-parity-all                        # all four scenarios
+make display-parity DISPLAY_SCENARIO=fwd       # one scenario
+make display-parity DISPLAY_SCENARIO=fwd DISPLAY_N=900   # longer window
+```
+
+Needs `mame` on `PATH` with `mfootb` available — the same setup the
+golden-trace gate above uses.

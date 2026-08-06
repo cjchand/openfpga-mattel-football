@@ -200,17 +200,19 @@ module video_renderer (
 
         // --- digit segments (7 cells x 7 segments): unconditional draw,
         // same as today -- every segment rectangle always shows its
-        // ghost/dim/bright color, no "is it lit" gating. Any lit (nonzero)
-        // segment is forced to BRIGHT: led_capture.v measures the same
-        // duty-cycle-based dim/bright split for digit segments as it does
-        // for the dash field's player/defender LEDs, and the real ROM
-        // apparently multiplexes the status digits at a lower duty cycle
-        // than the ball carrier -- faithful to hardware, but the user
-        // wants the score display to read at full brightness regardless,
-        // matching the ball carrier's intensity. Ghost (unlit, level 0)
-        // is untouched, so the always-visible segment outline look is
-        // unaffected; the dash field's own dim/bright distinction (below)
-        // is intentionally left alone.
+        // ghost/dim/bright color, no "is it lit" gating. Levels map
+        // straight through, 0/1/2 -> ghost/C_DIM/C_BRIGHT, the same as the
+        // dash field below.
+        //
+        // This used to force any lit (nonzero) segment to BRIGHT. The real
+        // ROM multiplexes the status digits at a lower duty cycle than the
+        // ball carrier, so the override made the score window read at full
+        // brightness at the cost of the hardware's actual look. It was
+        // removed to match MAME's mfootb (hh_rw5000.cpp), whose
+        // set_bri_levels(0.02, 0.2) split led_capture.v already measures.
+        // If the authentic look is judged too dim, the middle ground is a
+        // digits-only brightness bump here rather than collapsing the
+        // levels again -- do not reintroduce the force-to-bright.
         for (d = 0; d < 7; d = d + 1)
             for (s = 0; s < 7; s = s + 1) begin
                 {rx0, ry0, rw, rh} = seg_rect(s[2:0]);
@@ -218,7 +220,6 @@ module video_renderer (
                 ry0 = ry0 + DIGIT_Y;
                 if (x >= rx0 && x < rx0 + rw && y >= ry0 && y < ry0 + rh) begin
                     lvl = levels[(d*11 + s)*2 +: 2];
-                    if (lvl != 2'd0) lvl = 2'd2;
                     rgb = level_color(lvl);
                 end
             end
@@ -230,7 +231,6 @@ module video_renderer (
         if (x >= (digit_x(3'd3) + 9'd17) && x < (digit_x(3'd3) + 9'd19) &&
             y >= (DIGIT_Y + 9'd9) && y < (DIGIT_Y + 9'd11)) begin
             lvl = levels[(3*11 + 7)*2 +: 2];
-            if (lvl != 2'd0) lvl = 2'd2; // force bright when lit, same as the digit segments above
             rgb = level_color(lvl);
         end
 

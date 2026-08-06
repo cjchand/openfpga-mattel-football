@@ -15,11 +15,17 @@ module football_system (
     output wire [23:0] px_rgb,
     output wire        spk,
     output wire        window_tick,
-    input  wire        bezel_enable
+    input  wire        bezel_enable,
+    // Simulation-only tap for the display-parity test (sim/display_parity_tb.cpp),
+    // which compares these levels cell-for-cell against MAME's pwm_display.
+    // Same dbg_* convention as b6100_cpu's trace outputs; leave unconnected in
+    // synthesis and it optimises away.
+    output wire [197:0] dbg_levels
 );
     wire [8:0]   str;
     wire [9:0]   seg;
     wire [197:0] levels;
+    assign dbg_levels = levels;
 
     /* verilator lint_off PINCONNECTEMPTY */
     b6100_cpu cpu (

@@ -136,3 +136,62 @@ golden: tracegen
 	  -video none -sound none -nothrottle -seconds_to_run 45; \
 	sim/obj_dir_trace/b6100_trace $(ROM) $(GOLDEN_N) $$KB $$DIN ours.csv $(GOLDEN_SETTLE) && \
 	python3 tools/golden/trace_diff.py golden.tr ours.csv --min $$(( $(GOLDEN_N) / 2 ))
+
+# Display parity against MAME. `golden` above proves the CPU matches
+# instruction-for-instruction; this proves the DISPLAY matches -- the duty
+# measurement and the alpha=1/2 interpolation in led_capture.v, checked
+# against the pwm_display_device mfootb actually configures rather than
+# against a C++ twin of our own RTL (which would share any mistake by
+# construction).
+#
+# Both sides discard a settling stretch first: DISPLAY_SKIP frames of MAME,
+# and the equivalent windows on our side, so neither capture includes the
+# boot-time ramp. See tools/golden/display_diff.py for why the comparison is
+# per-cell steady behaviour rather than frame-for-frame.
+# 420 frames (7s) rather than a shorter run: the two captures sit about one
+# frame apart in phase, so a window that happens to END inside a transient
+# shows one side a step further along the same ramp than the other. At 180
+# frames the fwd scenario cut exactly into the ball carrier's decay and
+# reported a difference that a longer window shows is only that offset.
+DISPLAY_N     ?= 420
+DISPLAY_SKIP  ?= 120
+DISPLAY_SCENARIO ?= idle
+
+.PHONY: display-parity
+display-parity:
+	@case "$(DISPLAY_SCENARIO)" in \
+	  idle)  KB=0; DIN=1; PORT=;      FIELD=;;        \
+	  fwd)   KB=2; DIN=1; PORT=:IN.0; FIELD=Forward;; \
+	  kick)  KB=8; DIN=1; PORT=:IN.0; FIELD=Kick;;    \
+	  score) KB=0; DIN=3; PORT=:IN.1; FIELD=Score;;   \
+	  *) echo "usage: make display-parity DISPLAY_SCENARIO=idle|fwd|kick|score"; exit 2;; \
+	esac; \
+	$(VERILATOR) $(VFLAGS) --Mdir sim/obj_dir_display_parity --top-module football_system \
+	  -o display_parity sim/display_parity_tb.cpp \
+	  src/football_system.v src/b6100_cpu.v src/led_capture.v src/video_renderer.v \
+	  src/label_rom.v src/field_rom.v && \
+	rm -f sim/mame_display.csv sim/ours_display.csv && \
+	GOLDEN_PORT=$$PORT GOLDEN_FIELD=$$FIELD \
+	GOLDEN_DISPLAY_OUT=$(CURDIR)/sim/mame_display.csv \
+	GOLDEN_DISPLAY_SKIP=$(DISPLAY_SKIP) \
+	  $(MAME) mfootb -autoboot_script tools/golden/dump_display.lua \
+	  -video none -sound none -nothrottle \
+	  -seconds_to_run $$(( ($(DISPLAY_N) + $(DISPLAY_SKIP)) / 60 + 2 )) && \
+	cd src && ../sim/obj_dir_display_parity/display_parity \
+	  $(CURDIR)/$(ROM) $$(( $(DISPLAY_N) + $(DISPLAY_SKIP) )) $$KB $$DIN $(GOLDEN_SETTLE) \
+	  $(CURDIR)/sim/ours_display.csv && \
+	cd $(CURDIR) && python3 tools/golden/display_diff.py \
+	  sim/mame_display.csv sim/ours_display.csv --skip-ours $(DISPLAY_SKIP)
+
+# Run every scenario. Not optional dressing: no single scenario catches every
+# way the display model can be wrong. Removing the interpolation entirely is
+# only visible in `score`; FB2's alpha=1/8 shows in `fwd` and `score`; FB2's
+# WINDOW=1583 shows in `fwd` and `kick`. `idle` catches none of the three on
+# its own -- it is here because it is the attract state the core boots into,
+# not because it is load-bearing.
+.PHONY: display-parity-all
+display-parity-all:
+	@for s in idle fwd kick score; do \
+	  echo "=== display-parity: $$s ==="; \
+	  $(MAKE) --no-print-directory display-parity DISPLAY_SCENARIO=$$s || exit 1; \
+	done

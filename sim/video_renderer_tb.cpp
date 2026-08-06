@@ -86,16 +86,15 @@ static void test_digit_segments() {
     // (line 0, measured bright) and g (line 6, measured dim). Segment
     // rects: a={9,0,6,1} row y=0; g={9,5,6,1} row y=5; b={15,1,1,4} rows
     // y=1-4; interior probe (12,3) is background (between a/g's rows,
-    // outside b/c/e/f's columns). Digit segments force any lit (nonzero)
-    // level to BRIGHT (see video_renderer.v's comment) so the score
-    // display always reads at full intensity, matching the dash field's
-    // ball-carrier brightness -- so segment g shows BRIGHT here even
-    // though it was set to the DIM level, unlike the dash field's own
-    // dim/bright distinction (see test_dash_pixels).
+    // outside b/c/e/f's columns). Digit segments map their measured level
+    // straight through, 0/1/2 -> ghost/dim/bright, the same as the dash
+    // field (see test_dash_pixels) -- so segment g renders DIM here. This
+    // check is the regression guard for the removed force-to-bright
+    // override: if it comes back, g reads BRIGHT and this fails.
     r.set_level(2, 0, 2);
     r.set_level(2, 6, 1);
     CHECK(r.px(152 + 12, DIGIT_Y + 0) == BRIGHT, "segment a center");
-    CHECK(r.px(152 + 12, DIGIT_Y + 5) == BRIGHT, "segment g center is forced bright despite the dim level");
+    CHECK(r.px(152 + 12, DIGIT_Y + 5) == DIM, "segment g center shows dim, not forced bright");
     CHECK(r.px(152 + 15, DIGIT_Y + 3) == GHOST, "unlit segment b shows ghost");
     CHECK(r.px(152 + 12, DIGIT_Y + 3) == BG, "digit interior is background");
 }
@@ -108,7 +107,7 @@ static void test_decimal_point() {
     r.set_level(3, 7, 2);
     CHECK(r.px(204 + 1, dpy + 1) == BRIGHT, "dp of digit 3");
     r.set_level(3, 7, 1);
-    CHECK(r.px(204 + 1, dpy + 1) == BRIGHT, "dp is forced bright even at the dim level");
+    CHECK(r.px(204 + 1, dpy + 1) == DIM, "dp shows dim at the dim level, not forced bright");
     r.set_level(3, 7, 0);
     CHECK(r.px(204 + 1, dpy + 1) == GHOST, "dp ghost when off");
     // dp exists ONLY on digit 3: col 2 line 7 must render nothing near it
